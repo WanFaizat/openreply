@@ -5,15 +5,14 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "crypto";
-import { getEncryptionKeyHex, requireEnv } from "@/lib/env";
+import {
+  getEncryptionKeyHex,
+  getMetaGraphApiVersion,
+  requireEnv,
+} from "@/lib/env";
 
-// Instagram API with Instagram Login authorizes on www.instagram.com. The old
-// api.instagram.com/oauth/authorize host belonged to the retired Basic Display
-// API and now 404s ("Sorry, this page isn't available"), which looks like a bad
-// link rather than a wrong endpoint. The token exchange below still lives on
-// api.instagram.com — only the authorize hop moved.
-const INSTAGRAM_OAUTH_URL = "https://www.instagram.com/oauth/authorize";
-const INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token";
+const META_LOGIN_CONFIG_ID =
+  process.env.META_LOGIN_CONFIG_ID ?? "1390388576643422";
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
@@ -90,46 +89,48 @@ export function verifyOAuthState(state: string | null): OAuthStatePayload | null
 export function getAuthorizationUrl(redirectUri: string, state: string): string {
   const params = new URLSearchParams({
     client_id: requireEnv("INSTAGRAM_APP_ID"),
+    config_id: META_LOGIN_CONFIG_ID,
     redirect_uri: redirectUri,
-    scope:
-      "instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_manage_insights",
     response_type: "code",
+    override_default_response_type: "true",
     state,
   });
 
-  return `${INSTAGRAM_OAUTH_URL}?${params.toString()}`;
+  return `https://www.facebook.com/${getMetaGraphApiVersion()}/dialog/oauth?${params.toString()}`;
 }
 
 export async function exchangeCodeForToken(
   code: string,
   redirectUri: string
-): Promise<{ accessToken: string; userId: string }> {
-  const body = new URLSearchParams({
+): Promise<{ accessToken: string }> {
+  const url = new URL(
+    `https://graph.facebook.com/${getMetaGraphApiVersion()}/oauth/access_token`
+  );
+  url.search = new URLSearchParams({
     client_id: requireEnv("INSTAGRAM_APP_ID"),
-    client_secret: requireEnv("INSTAGRAM_APP_SECRET"),
-    grant_type: "authorization_code",
+    client_secret: requireMetaAppSecret(),
     redirect_uri: redirectUri,
     code,
-  });
+  }).toString();
 
-  const response = await fetch(INSTAGRAM_TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
+  const response = await fetch(url.toString(), { cache: "no-store" });
 
   if (!response.ok) {
     const error = await response.json();
     throw new Error(
-      `Token exchange failed: ${error.error_message || JSON.stringify(error)}`
+      `Token exchange failed: ${error.error?.message || error.error_message || JSON.stringify(error)}`
     );
   }
 
   const data = await response.json();
-  return {
-    accessToken: data.access_token,
-    userId: String(data.user_id),
-  };
+  if (typeof data.access_token !== "string" || !data.access_token) {
+    throw new Error("Token exchange response did not include an access token");
+  }
+  return { accessToken: data.access_token };
+}
+
+function requireMetaAppSecret(): string {
+  return process.env.FACEBOOK_APP_SECRET || requireEnv("INSTAGRAM_APP_SECRET");
 }
 
 function getEncryptionKey(): Buffer {

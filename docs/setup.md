@@ -9,7 +9,7 @@ If you use a coding assistant, start with [Set it up with an AI assistant](#set-
 | Connection | What you configure | Costs |
 | --- | --- | --- |
 | **[Zernio](zernio.md), recommended for simpler connection setup** | A Zernio API key in Settings, a profile, and an Instagram account. OpenReply registers the webhook. No own Meta app or Meta secrets required. | Optional paid provider, plus your hosting. Zernio sponsors OpenReply. |
-| **[Your own Meta app](#the-meta-app)** | Your Meta app, Instagram Login, app secrets, webhook, and App Review where required. | Your hosting and any other services you use. No Zernio subscription. |
+| **[Your own Meta app](#the-meta-app)** | Your Meta app, Facebook Login for Business, app secrets, webhook, and App Review where required. | Your hosting and any other services you use. No Zernio subscription. |
 
 Both use the official Instagram API and remain subject to Instagram’s policies, account requirements, permissions, rate limits, and messaging windows. Both need PostgreSQL, Redis, email delivery, and a running worker. Existing connections are not migrated automatically.
 
@@ -113,9 +113,10 @@ Copy `.env.example` to `.env` for local work, or set these in Vercel and Railway
 | Variable | What it is |
 | --- | --- |
 | `META_GRAPH_API_VERSION` | Graph API version, for example `v25.0`. |
-| `INSTAGRAM_APP_ID` | From the Meta app, see Step 6. |
-| `INSTAGRAM_APP_SECRET` | From the Meta app. |
-| `FACEBOOK_APP_SECRET` | From the Meta app. |
+| `INSTAGRAM_APP_ID` | Facebook App ID for the Meta app. |
+| `META_LOGIN_CONFIG_ID` | Facebook Login for Business configuration ID. Defaults to OpenReply's configured Meta login. |
+| `FACEBOOK_APP_SECRET` | From the Meta app's App settings, Basic page. |
+| `INSTAGRAM_APP_SECRET` | Optional legacy-compatible app secret variable; use `FACEBOOK_APP_SECRET` for new deployments. |
 | `WEBHOOK_VERIFY_TOKEN` | Any random string. You paste the same value into Meta's webhook config. |
 
 `ENCRYPTION_KEY` must be exactly 64 hex characters or the app throws on boot.
@@ -132,7 +133,7 @@ Optional, for tuning the polling reconciler (defaults are fine to start):
 
 After deployment, sign in as a workspace owner or admin and follow [docs/zernio.md](zernio.md). Save an unrestricted read/write API key with Inbox access, select your existing Zernio profile, then import an Instagram account or connect a new one through Zernio. OpenReply creates its webhook automatically.
 
-You can skip the entire Meta app section below and continue at [Test it end to end](#test-it-end-to-end). No `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `FACEBOOK_APP_SECRET`, or `WEBHOOK_VERIFY_TOKEN` is needed for this path.
+You can skip the entire Meta app section below and continue at [Test it end to end](#test-it-end-to-end). No `INSTAGRAM_APP_ID`, app secret, or `WEBHOOK_VERIFY_TOKEN` is needed for this path.
 
 ## The Meta app
 
@@ -147,44 +148,32 @@ Go to [developers.facebook.com/apps](https://developers.facebook.com/apps) and c
 - App type: Business.
 - Contact email: one you actually check.
 
-When it asks you to add a use case, filter to All, then choose Manage messaging and content on Instagram. Do not pick "Create and manage ads with Marketing API", and do not pick "Authenticate with Facebook Login". OpenReply uses Instagram Login. Picking the Facebook Login variant makes the OAuth flow fail later with a mismatched client error.
+When it asks you to add a use case, choose the Instagram messaging/content use case and enable Facebook Login for Business. OpenReply uses Meta's Unified Login dialog with a Business Login configuration; it does not use the retired Instagram Login authorization flow. Do not add the Marketing API use case.
 
 If you accidentally added the Marketing API use case, remove it. It has its own heavy review requirements and can block publishing.
 
-### Step 5: Collect the three secrets
+### Step 5: Configure Business Login and collect credentials
 
-There are two app secrets and two app IDs, which is confusing. Here is what maps to what.
+Open Facebook Login for Business in the Meta app dashboard and create or select the configuration used by this deployment. Include the Instagram and Page permissions the product needs: `instagram_basic`, `instagram_manage_comments`, `instagram_manage_messages`, `instagram_manage_insights`, `pages_show_list`, and `pages_read_engagement`. The app's configured Business Login ID is `1390388576643422`; set `META_LOGIN_CONFIG_ID` if you use a different configuration. The configuration must belong to the same Meta app as `INSTAGRAM_APP_ID`.
+
+Use the Facebook App ID and app secret from App settings, Basic. The app ID configured for OpenReply is `1671833827801953`.
 
 | Environment variable | Where it lives |
 | --- | --- |
-| `INSTAGRAM_APP_ID` | Instagram, API setup with Instagram login. A number like `2036...` |
-| `INSTAGRAM_APP_SECRET` | Same page, click Show |
+| `INSTAGRAM_APP_ID` | Facebook App ID from App settings, Basic |
 | `FACEBOOK_APP_SECRET` | App settings, Basic, App secret, click Show |
 
-The Instagram app ID is not the same number as the Facebook App ID shown on the Basic settings page. Use the one under the Instagram product.
-
-OpenReply verifies webhook signatures against both `FACEBOOK_APP_SECRET` and `INSTAGRAM_APP_SECRET`, so you do not have to guess which one Meta signs with. Set both.
+`INSTAGRAM_APP_SECRET` remains accepted for existing installations, but new installations should set `FACEBOOK_APP_SECRET`. Webhook signature verification accepts either secret.
 
 ### Step 6: Add your Instagram account as a tester, and accept the invite
 
-This is the step people miss, and it produces the error "Insufficient Developer Role" on the Instagram login screen. In development, only accounts that have a role on your app can connect. Even your own account has to be added and accept.
+In development, only Facebook accounts with a role on your app can authorize. Add the Facebook user who manages the Instagram professional account as an app tester/developer and accept the invitation.
 
-There are two halves. Both are required.
-
-Half one, on the Meta side. In the app dashboard, open App roles, then Roles (in the newer console this is also reachable from the Instagram product under "Generate access tokens"). Find the section for Instagram testers, click add, and enter the exact Instagram username of the account you want to connect. Send the invite.
-
-Half two, on the Instagram side. This is the part that gets skipped. Open Instagram as that account (the phone app is easiest):
-
-1. Go to your profile, then the menu, then Settings and activity.
-2. Open Apps and websites (older versions: Website permissions, then Apps and websites).
-3. Open Tester invites.
-4. Accept the invite from your app.
-
-Until you accept here, the account is not really a tester and the login will keep failing. If you do not see the invite, double-check you sent it to the exact username and that the account is a Business or Creator account.
+The Instagram account must be a Business or Creator account linked to a Facebook Page. In the Business Login configuration, grant the Page and Instagram permissions for the Page/account the user selects.
 
 ### Step 7: Register the OAuth redirect
 
-In the Instagram product, open Set up Instagram business login, then Business login settings. In the OAuth redirect URIs field, add exactly, using your Vercel domain:
+In Facebook Login for Business settings, add this exact OAuth redirect URI, using your deployment domain:
 
 ```
 https://your-app.vercel.app/api/instagram/callback
@@ -192,7 +181,7 @@ https://your-app.vercel.app/api/instagram/callback
 
 No trailing slash. If this is missing or wrong, connecting an account fails with a redirect_uri mismatch. You can register more than one, which is useful if you change domains later; keep the old and new both listed.
 
-You do not need the "Embed URL" that Meta shows here. OpenReply builds its own login URL. Users connect by opening your app, going to Settings, and clicking Connect Instagram.
+The callback must match `NEXTAUTH_URL` exactly. OpenReply builds the login URL using the configured Business Login ID. Users connect from Settings by clicking Connect Instagram.
 
 ### Step 8: Configure the webhook
 
@@ -227,19 +216,17 @@ Then publish. Depending on your access level, Meta may let you go live for your 
 
 This one costs an afternoon because the symptom points nowhere near the cause.
 
-A published app still holds **Standard Access** to `instagram_business_basic`, `instagram_business_manage_comments`, and `instagram_business_manage_messages`. Standard Access only covers Instagram accounts that have a role on your app — admins, developers, and Instagram testers. Publishing makes the app live; it does not widen who the permissions apply to. Advanced Access, which covers everyone else, comes only from App Review.
+A published app still holds **Standard Access** to the configured Instagram and Page permissions. Standard Access only covers app-role users. Publishing makes the app live; it does not widen who the permissions apply to. Advanced Access, which covers other users, comes only from App Review.
 
 So connecting a second account fails even though the first one works, on the same app, with the same code.
 
-The symptom: Instagram's consent screen appears and the login succeeds, the code exchange at `api.instagram.com/oauth/access_token` returns a normal `IGAA…` token with all the requested permissions — and then every single call against `graph.instagram.com` is refused:
+The symptom: Facebook login succeeds, but `/me/accounts` does not return a Page with an `instagram_business_account`. Confirm the user selected the correct Page and granted the permissions in the Business Login configuration. OpenReply then uses that Page access token against `graph.facebook.com` for Instagram Graph operations.
 
 ```
-Unsupported request - method type: get  [code=100, type=IGApiException]
+Unsupported request - method type: get  [code=100]
 ```
 
-`/access_token`, `/refresh_access_token`, `/me` — all of them, identically. Nothing about the message suggests a missing role, and the token itself looks fine.
-
-The fix for your own accounts is the same two-part dance as Step 6, once per account: invite the Instagram username under App roles, Roles, Instagram testers, then accept the invite inside Instagram under Edit profile, Apps and websites, Tester invites. For accounts you do not control, you need App Review — see [META_APP_REVIEW.md](../META_APP_REVIEW.md).
+For accounts outside app roles, request Advanced Access through App Review — see [META_APP_REVIEW.md](../META_APP_REVIEW.md). Accounts connected before this Unified Login change must be reconnected; their Instagram Login tokens are not interchangeable with Facebook Page access tokens.
 
 ### Migrating from ManyChat or another DM tool: give OpenReply control of conversations
 

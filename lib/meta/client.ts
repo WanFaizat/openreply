@@ -1,7 +1,7 @@
 import { getMetaGraphApiVersion, requireEnv } from "@/lib/env";
 
 function instagramGraphBase() {
-  return `https://graph.instagram.com/${getMetaGraphApiVersion()}`;
+  return facebookGraphBase();
 }
 
 function facebookGraphBase() {
@@ -616,16 +616,55 @@ export async function getConversationMessages(
   return data.messages?.data ?? [];
 }
 
-export async function getUserInfo(accessToken: string): Promise<InstagramUser> {
-  const url = new URL(`${instagramGraphBase()}/me`);
+export async function getUserInfo(
+  accessToken: string,
+  instagramAccountId: string
+): Promise<InstagramUser> {
+  const url = new URL(`${instagramGraphBase()}/${instagramAccountId}`);
   url.searchParams.set(
     "fields",
-    "id,user_id,username,name,profile_picture_url,followers_count"
+    "id,username,name,profile_picture_url,followers_count"
   );
   url.searchParams.set("access_token", accessToken);
 
   const response = await fetch(url.toString());
-  return handleResponse<InstagramUser>(response);
+  const user = await handleResponse<InstagramUser>(response);
+  return { ...user, user_id: user.id };
+}
+
+export async function getInstagramAccountFromPages(
+  userAccessToken: string
+): Promise<{ accessToken: string; userInfo: InstagramUser }> {
+  const url = new URL(`${facebookGraphBase()}/me/accounts`);
+  url.searchParams.set(
+    "fields",
+    "id,name,access_token,instagram_business_account{id,username,name,profile_picture_url,followers_count}"
+  );
+  url.searchParams.set("limit", "100");
+  url.searchParams.set("access_token", userAccessToken);
+
+  const response = await fetch(url.toString(), { cache: "no-store" });
+  const pages = await handleResponse<{
+    data: Array<{
+      access_token?: string;
+      instagram_business_account?: InstagramUser;
+    }>;
+  }>(response);
+  const linkedPage = pages.data.find(
+    (page) => page.access_token && page.instagram_business_account?.id
+  );
+
+  if (!linkedPage?.access_token || !linkedPage.instagram_business_account) {
+    throw new Error(
+      "No Instagram professional account was found on the Facebook Pages granted to this app"
+    );
+  }
+
+  const userInfo = linkedPage.instagram_business_account;
+  return {
+    accessToken: linkedPage.access_token,
+    userInfo: { ...userInfo, user_id: userInfo.id },
+  };
 }
 
 const MEDIA_FIELDS =
@@ -636,9 +675,10 @@ const MEDIA_PAGE_SIZE = 100;
 
 export async function getUserMedia(
   accessToken: string,
+  instagramAccountId: string,
   limit = 25
 ): Promise<InstagramMedia[]> {
-  const url = new URL(`${instagramGraphBase()}/me/media`);
+  const url = new URL(`${instagramGraphBase()}/${instagramAccountId}/media`);
   url.searchParams.set("fields", MEDIA_FIELDS);
   url.searchParams.set("limit", limit.toString());
   url.searchParams.set("access_token", accessToken);
@@ -656,11 +696,12 @@ export async function getUserMedia(
  */
 export async function getAllUserMedia(
   accessToken: string,
+  instagramAccountId: string,
   max = 500
 ): Promise<InstagramMedia[]> {
   const results: InstagramMedia[] = [];
 
-  const first = new URL(`${instagramGraphBase()}/me/media`);
+  const first = new URL(`${instagramGraphBase()}/${instagramAccountId}/media`);
   first.searchParams.set("fields", MEDIA_FIELDS);
   first.searchParams.set("limit", String(Math.min(MEDIA_PAGE_SIZE, max)));
   first.searchParams.set("access_token", accessToken);
@@ -683,7 +724,7 @@ export async function getAllUserMedia(
 /**
  * Fetch per-media insight metrics (views, reach, saved, shares, etc.).
  *
- * Requires the `instagram_business_manage_insights` permission — accounts
+ * Requires the `instagram_manage_insights` permission — accounts
  * connected before that scope was requested will throw a PermissionError.
  * Metric validity varies by media type, so pass only metrics that apply to
  * the given media (e.g. `views` is not valid for image posts on some accounts).
@@ -725,7 +766,7 @@ const FOLLOWER_INSIGHT_MAX_DAYS = 30;
 /**
  * Fetch the daily net follower change for an account.
  *
- * Requires `instagram_business_manage_insights`. Note this metric is *not*
+ * Requires `instagram_manage_insights`. Note this metric is *not*
  * universally available: Instagram omits it for accounts under 100 followers
  * and it is unsupported on some account types. Callers must treat `null` as
  * "no series available" rather than an error — see the backfill in
@@ -782,12 +823,16 @@ export async function getFollowerCountSeries(
 export async function getLongLivedToken(
   shortLivedToken: string
 ): Promise<{ accessToken: string; expiresIn: number }> {
-  const url = new URL(`${instagramGraphBase()}/access_token`);
-  url.searchParams.set("grant_type", "ig_exchange_token");
-  url.searchParams.set("client_secret", requireEnv("INSTAGRAM_APP_SECRET"));
-  url.searchParams.set("access_token", shortLivedToken);
+  const url = new URL(`${facebookGraphBase()}/oauth/access_token`);
+  url.searchParams.set("grant_type", "fb_exchange_token");
+  url.searchParams.set("client_id", requireEnv("INSTAGRAM_APP_ID"));
+  url.searchParams.set(
+    "client_secret",
+    process.env.FACEBOOK_APP_SECRET || requireEnv("INSTAGRAM_APP_SECRET")
+  );
+  url.searchParams.set("fb_exchange_token", shortLivedToken);
 
-  const response = await fetch(url.toString());
+  const response = await fetch(url.toString(), { cache: "no-store" });
   const data = await handleResponse<TokenResponse>(response);
 
   return {
@@ -799,11 +844,16 @@ export async function getLongLivedToken(
 export async function refreshLongLivedToken(
   longLivedToken: string
 ): Promise<{ accessToken: string; expiresIn: number }> {
-  const url = new URL(`${instagramGraphBase()}/refresh_access_token`);
-  url.searchParams.set("grant_type", "ig_refresh_token");
-  url.searchParams.set("access_token", longLivedToken);
+  const url = new URL(`${facebookGraphBase()}/oauth/access_token`);
+  url.searchParams.set("grant_type", "fb_exchange_token");
+  url.searchParams.set("client_id", requireEnv("INSTAGRAM_APP_ID"));
+  url.searchParams.set(
+    "client_secret",
+    process.env.FACEBOOK_APP_SECRET || requireEnv("INSTAGRAM_APP_SECRET")
+  );
+  url.searchParams.set("fb_exchange_token", longLivedToken);
 
-  const response = await fetch(url.toString());
+  const response = await fetch(url.toString(), { cache: "no-store" });
   const data = await handleResponse<TokenResponse>(response);
 
   return {

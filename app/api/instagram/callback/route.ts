@@ -3,7 +3,11 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
 import { getBaseUrl } from "@/lib/env";
 import { canConnectInstagramAccount } from "@/lib/instagram-accounts";
-import { getLongLivedToken, getUserInfo, subscribeInstagramAccountToWebhooks } from "@/lib/meta/client";
+import {
+  getInstagramAccountFromPages,
+  getLongLivedToken,
+  subscribeInstagramAccountToWebhooks,
+} from "@/lib/meta/client";
 import {
   encryptToken,
   exchangeCodeForToken,
@@ -47,9 +51,10 @@ export async function GET(request: NextRequest) {
       code,
       redirectUri
     );
-    const { accessToken: longLivedToken, expiresIn } =
+    const { accessToken: longLivedUserToken } =
       await getLongLivedToken(shortLivedToken);
-    const userInfo = await getUserInfo(longLivedToken);
+    const { accessToken: pageAccessToken, userInfo } =
+      await getInstagramAccountFromPages(longLivedUserToken);
     // Webhooks and the messaging API key off the professional account ID
     // (user_id), not the app-scoped `id`. Store user_id so comment webhooks
     // can be matched back to this account. Fall back to id if user_id is
@@ -66,14 +71,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const encryptedToken = encryptToken(longLivedToken);
-    const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
+    const encryptedToken = encryptToken(pageAccessToken);
 
     let webhookSubscribed = false;
     try {
       const subscription = await subscribeInstagramAccountToWebhooks(
         instagramId,
-        longLivedToken
+        pageAccessToken
       );
       webhookSubscribed = Boolean(subscription.success);
     } catch (subscriptionError) {
@@ -87,7 +91,9 @@ export async function GET(request: NextRequest) {
       username: userInfo.username,
       name: userInfo.name,
       accessToken: encryptedToken,
-      tokenExpiresAt,
+      // Page access tokens derived from a long-lived user token do not use the
+      // Instagram Login 60-day refresh flow; reconnect if Meta revokes access.
+      tokenExpiresAt: null,
       webhookSubscribed,
     };
     const existing = await prisma.instagramAccount.findUnique({ where: { instagramId } });

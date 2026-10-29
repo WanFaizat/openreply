@@ -359,7 +359,7 @@ export default async function Home() {
                   </div>
                   <p>
                     Keep the existing direct Meta integration. Create your app,
-                    configure Instagram Login and webhooks, and manage platform
+                    configure Facebook Login for Business and webhooks, and manage platform
                     credentials yourself.
                   </p>
                   <ul>
