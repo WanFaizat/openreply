@@ -46,7 +46,6 @@ import {
 } from "@/lib/billing/usage";
 import { recordWorkerAlert } from "@/lib/ops/worker-health";
 import {
-  buildTrackedUrl,
   renderMessageWithTracking,
   renderMessageWithoutLink,
 } from "@/lib/tracking/message";
@@ -148,39 +147,32 @@ type WorkerTrackedLink = {
  */
 function buildLinkButtons(
   trackedLinks: WorkerTrackedLink[],
-  primaryLabel: string | null,
-  recipientToken: string
+  primaryLabel: string | null
 ): { title: string; url: string }[] {
   return trackedLinks.slice(0, 3).map((link, index) => ({
-    url: buildTrackedUrl(link.slug, undefined, recipientToken),
+    // Open the destination directly instead of a GitHub Codespaces
+    // tracking redirect that displays a warning to Instagram recipients.
+    url: link.destinationUrl,
     title:
       (index === 0 ? primaryLabel : link.label) || link.label || "Open link",
   }));
 }
 
 /**
- * Fallback text when Meta rejects the button template: render the primary link
- * inline, then append any extra tracked URLs on their own lines so no link is
- * lost.
+ * Fallback text when Meta rejects the button template: send direct
+ * destination URLs instead of development-server tracking redirects.
  */
 function buildInlineLinkFallback(
   message: string,
   commenterName: string | null | undefined,
   trackedLinks: WorkerTrackedLink[],
-  bodyText: string,
-  recipientToken: string
+  bodyText: string
 ): string {
-  const base =
-    renderMessageWithTracking({
-      message,
-      commenterName,
-      trackedLinks,
-      recipientToken,
-    }) || bodyText;
-  const extraUrls = trackedLinks
-    .slice(1)
-    .map((link) => buildTrackedUrl(link.slug, undefined, recipientToken));
-  return extraUrls.length > 0 ? `${base}\n${extraUrls.join("\n")}` : base;
+  const base = renderMessageWithoutLink({ message, commenterName }) || bodyText;
+  const missingUrls = trackedLinks
+    .map((link) => link.destinationUrl)
+    .filter((url) => !base.includes(url));
+  return missingUrls.length > 0 ? `${base}\n${missingUrls.join("\n")}` : base;
 }
 
 type RevealAutomation = {
@@ -228,11 +220,9 @@ async function sendRevealDirectMessage({
       message: automation.dmMessage,
       commenterName,
     }) || "Here's your link:";
-  const recipientToken = hashRecipientId(userId);
   const buttons = buildLinkButtons(
     automation.trackedLinks,
-    automation.linkButtonLabel,
-    recipientToken
+    automation.linkButtonLabel
   );
 
   try {
@@ -261,8 +251,7 @@ async function sendRevealDirectMessage({
           automation.dmMessage,
           commenterName,
           automation.trackedLinks,
-          bodyText,
-          recipientToken
+          bodyText
         ),
       });
     } catch (fallbackError) {
@@ -705,8 +694,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
           }) || "Here's your link:";
         const buttons = buildLinkButtons(
           automation.trackedLinks,
-          automation.linkButtonLabel,
-          hashRecipientId(commenterId)
+          automation.linkButtonLabel
         );
 
         try {
@@ -732,8 +720,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
             automation.dmMessage,
             commenterName,
             automation.trackedLinks,
-            bodyText,
-            hashRecipientId(commenterId)
+            bodyText
           );
           try {
             await sendPrivateReply({
