@@ -27,7 +27,16 @@ export const createAgentCampaignSchema = z
     target: agentCampaignTargetSchema,
     postId: z.string().min(1).optional(),
     postUrl: z.string().url().optional(),
-    keywords: z.array(z.string().trim().min(1).max(50)).min(1).max(10),
+    // Not needed when matchAnyWord is true (see the refine below).
+    keywords: z
+      .array(z.string().trim().min(1).max(50))
+      .max(10)
+      .optional()
+      .default([]),
+    // Answer every comment or message instead of waiting for a keyword.
+    matchAnyWord: z.boolean().optional().default(false),
+    // Also answer direct messages and Story replies, not only comments.
+    dmTriggerEnabled: z.boolean().optional().default(false),
     wholeWordMatch: z.boolean().optional().default(true),
     dmMessage: z.string().trim().min(1).max(1000),
     linkUrl: httpsUrl.optional(),
@@ -42,6 +51,10 @@ export const createAgentCampaignSchema = z
     followPromptButtonLabel: z.string().trim().max(20).optional(),
     instagramAccountId: z.string().min(1).optional(),
     isActive: z.boolean().optional().default(false),
+  })
+  .refine((data) => data.matchAnyWord || data.keywords.length >= 1, {
+    message: "Give at least one keyword, or set matchAnyWord to true",
+    path: ["keywords"],
   })
   .refine((data) => data.target !== "post" || Boolean(data.postId), {
     message: "postId is required when target is 'post'",

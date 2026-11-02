@@ -1083,6 +1083,48 @@ describe("DM Worker — DM keyword trigger", () => {
     expect(mockReserveWorkspaceDMSend).not.toHaveBeenCalled();
   });
 
+  it("should answer an any-word campaign once per person per day", async () => {
+    mockPrisma.automation.findMany.mockResolvedValue([
+      { ...dmTriggerAutomation, matchAnyWord: true, keywords: [] },
+    ]);
+    // The person already got a reply from this campaign within the window.
+    mockPrisma.dmLog.findFirst.mockResolvedValue({ id: "log_recent" });
+
+    const processor = getProcessor();
+    await processor(createMockMessageJob({ messageText: "ok terima kasih" }));
+
+    expect(mockPrisma.dmLog.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          automationId: "auto_789",
+          commenterId: "commenter_999",
+          status: "SENT",
+        }),
+      })
+    );
+    expect(mockSendDirectMessage).not.toHaveBeenCalled();
+  });
+
+  it("should answer an any-word campaign when the person has not been answered recently", async () => {
+    mockPrisma.automation.findMany.mockResolvedValue([
+      { ...dmTriggerAutomation, matchAnyWord: true, keywords: [] },
+    ]);
+
+    const processor = getProcessor();
+    await processor(createMockMessageJob({ messageText: "salam" }));
+
+    expect(mockSendDirectMessage).toHaveBeenCalled();
+  });
+
+  it("should not apply the daily limit to keyword campaigns", async () => {
+    mockPrisma.dmLog.findFirst.mockResolvedValue({ id: "log_recent" });
+
+    const processor = getProcessor();
+    await processor(createMockMessageJob());
+
+    expect(mockSendDirectMessage).toHaveBeenCalled();
+  });
+
   it("should send the configured destination URL as a button for DM triggers", async () => {
     mockPrisma.automation.findMany.mockResolvedValue([
       {

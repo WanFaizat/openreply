@@ -12,6 +12,8 @@ type CampaignRecord = {
   name: string;
   isActive: boolean;
   keywords: string[];
+  matchAnyWord: boolean;
+  dmTriggerEnabled: boolean;
   matchAnyPost: boolean;
   pendingNextReel: boolean;
   postId: string | null;
@@ -39,6 +41,8 @@ export function toAgentCampaign(campaign: CampaignRecord) {
     postId: campaign.postId,
     postUrl: campaign.postUrl,
     keywords: campaign.keywords,
+    matchAnyWord: campaign.matchAnyWord,
+    dmTriggerEnabled: campaign.dmTriggerEnabled,
     dmMessage: campaign.dmMessage,
     publicReplyEnabled: campaign.publicReplyEnabled,
     links: campaign.trackedLinks.map((link) => ({
@@ -125,9 +129,9 @@ export async function createAgentCampaign(
       postUrl: isSpecificPost ? (input.postUrl ?? null) : null,
       pendingNextReel,
       matchAnyPost,
-      keywords: input.keywords,
-      matchAnyWord: false,
-      dmTriggerEnabled: false,
+      keywords: input.matchAnyWord ? [] : input.keywords,
+      matchAnyWord: input.matchAnyWord,
+      dmTriggerEnabled: input.dmTriggerEnabled,
       dmMessage: input.dmMessage,
       openingDmEnabled: false,
       linkButtonLabel: input.linkButtonLabel || null,

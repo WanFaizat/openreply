@@ -56,6 +56,9 @@ import { ZernioApiError } from "@/lib/zernio/client";
 
 const BACKOFF_DELAYS = [5 * 60 * 1000, 15 * 60 * 1000, 45 * 60 * 1000];
 
+// How long an "any word" DM campaign waits before answering the same person again.
+const ANY_WORD_DM_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
 // How long to wait before re-checking a follow that came back false: one
 // delay per re-check, each counted from the previous check.
 //
@@ -1314,6 +1317,24 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
       existingLog?.dmDeliveryUnconfirmed
     ) {
       continue;
+    }
+
+    // An "any word" campaign answers every message. Without a limit it would
+    // answer again on each line of an ongoing chat, including while the owner is
+    // talking to the person. Reply to a given person once per cooldown window.
+    // Keyword campaigns are unaffected.
+    if (automation.matchAnyWord) {
+      const recentReply = await prisma.dmLog.findFirst({
+        where: {
+          automationId: automation.id,
+          commenterId: senderId,
+          commentId: { startsWith: "dm:" },
+          status: "SENT",
+          dmSentAt: { gte: new Date(Date.now() - ANY_WORD_DM_COOLDOWN_MS) },
+        },
+        select: { id: true },
+      });
+      if (recentReply) continue;
     }
 
     const logBase = {

@@ -59,6 +59,27 @@ describe("createAgentCampaignSchema", () => {
     ).toBe(false);
   });
 
+  it("answers everyone when matchAnyWord is set, without keywords", () => {
+    const parsed = createAgentCampaignSchema.safeParse({
+      name: "Balas semua",
+      target: "any_post",
+      matchAnyWord: true,
+      dmTriggerEnabled: true,
+      dmMessage: "Terima kasih. Saya balas sebentar lagi.",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.keywords).toEqual([]);
+      expect(parsed.data.dmTriggerEnabled).toBe(true);
+    }
+  });
+
+  it("keeps DM and Story replies off unless asked for", () => {
+    const parsed = createAgentCampaignSchema.parse(valid);
+    expect(parsed.matchAnyWord).toBe(false);
+    expect(parsed.dmTriggerEnabled).toBe(false);
+  });
+
   it("only allows https links", () => {
     expect(
       createAgentCampaignSchema.safeParse({

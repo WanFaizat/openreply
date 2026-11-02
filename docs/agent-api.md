@@ -49,7 +49,9 @@ Create a campaign.
 | `name` | 1 to 100 characters |
 | `target` | `post`, `next_reel` or `any_post` |
 | `postId` | required when `target` is `post` |
-| `keywords` | 1 to 10 keywords, each up to 50 characters |
+| `keywords` | 1 to 10 keywords, each up to 50 characters. Not needed when `matchAnyWord` is `true` |
+| `matchAnyWord` | default `false`. When `true` the campaign answers every comment or message, whatever it says |
+| `dmTriggerEnabled` | default `false`. When `true` the campaign also answers direct messages and Story replies, not only comments |
 | `wholeWordMatch` | default `true` |
 | `dmMessage` | 1 to 1000 characters |
 | `linkUrl` | optional, must start with `https://` |
@@ -71,6 +73,23 @@ curl -sS -X POST "$OPENREPLY_URL/api/agent/campaigns" \
     "isActive": false
   }'
 ```
+
+An "answer everyone" campaign, for comments, direct messages and Story replies:
+
+```bash
+curl -sS -X POST "$OPENREPLY_URL/api/agent/campaigns" \
+  -H "Authorization: Bearer $AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Balas semua",
+    "target": "any_post",
+    "matchAnyWord": true,
+    "dmTriggerEnabled": true,
+    "dmMessage": "Terima kasih sudah hubungi saya. Saya balas secepat mungkin."
+  }'
+```
+
+For direct messages, an "answer everyone" campaign replies to a given person once every 24 hours, so it does not answer each line of an ongoing chat. Campaigns that use keywords are not limited this way.
 
 ### `PATCH /api/agent/campaigns/{id}`
 
