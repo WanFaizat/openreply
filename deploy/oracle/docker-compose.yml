@@ -1,0 +1,102 @@
+# OpenReply on one always-on server (Oracle Cloud Always Free, or any Linux VPS).
+#
+#   cd deploy/oracle && sudo docker compose up -d --build
+#
+# Every service reads deploy/oracle/.env. setup.sh writes it; it is never committed.
+# Postgres and Redis are not published to the internet, only Caddy (80 and 443) is.
+name: openreply
+
+# web, worker and cron run the same image. Only web builds it, so a small server
+# does not build the app three times at once.
+x-app: &app
+  image: openreply-app:latest
+  pull_policy: never
+  restart: unless-stopped
+  env_file: .env
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: openreply
+      POSTGRES_USER: openreply
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run setup.sh first}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openreply -d openreply"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Web app and webhook receiver. Applies database migrations before it starts.
+  web:
+    <<: *app
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["sh", "-c", "npx prisma migrate deploy && npm run start"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
+  # Sends the DMs. Starts after the web app so the database is already migrated.
+  worker:
+    <<: *app
+    command: ["npm", "run", "worker"]
+    depends_on:
+      web:
+        condition: service_healthy
+
+  # Scheduled jobs under /api/cron (token refresh, next-reel attach, follower snapshots).
+  cron:
+    <<: *app
+    command: ["sh", "scripts/cron.sh"]
+    environment:
+      CRON_BASE_URL: http://web:3000
+    depends_on:
+      web:
+        condition: service_healthy
+
+  # HTTPS in front of the web app. Gets and renews the certificate by itself.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?run setup.sh first}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:
