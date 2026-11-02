@@ -19,7 +19,7 @@ type DebugTokenData = {
   is_valid?: boolean;
   expires_at?: number;
   scopes?: string[];
-  granular_scopes?: Array<{ permission: string; target_ids?: string[] }>;
+  granular_scopes?: Array<{ scope: string; target_ids?: string[] }>;
 };
 
 async function graph(url: string): Promise<GraphResult> {
@@ -75,6 +75,7 @@ async function main() {
     );
     console.log(`  webhook subscribed flag: ${account.webhookSubscribed}`);
 
+    const checkedTargets = new Set<string>();
     let token: string;
     try {
       token = decryptToken(account.accessToken);
@@ -108,8 +109,20 @@ async function main() {
         console.log(`  scopes: ${(data.scopes ?? []).join(", ") || "(none)"}`);
         for (const scope of data.granular_scopes ?? []) {
           console.log(
-            `  granular ${scope.permission}: ${scope.target_ids?.length ?? "all"} target(s)`
+            `  granular ${scope.scope}: ${scope.target_ids?.join(", ") ?? "all targets"}`
           );
+          for (const target of scope.target_ids ?? []) {
+            if (checkedTargets.has(target)) continue;
+            checkedTargets.add(target);
+            const result = await graph(
+              `${fb}/${target}?${query({ fields: "id,username" })}`
+            );
+            report(
+              `node ${target}`,
+              typeof result.body.id === "string",
+              typeof result.body.id === "string" ? "reachable" : failure(result)
+            );
+          }
         }
       }
     } catch (error) {
@@ -124,10 +137,10 @@ async function main() {
         label: "profile (graph.facebook.com)",
         url: `${fb}/${account.instagramId}?${query({ fields: "id,username,media_count" })}`,
       },
-      {
-        label: "assigned accounts",
-        url: `${fb}/me/assigned_instagram_accounts?${query({ fields: "id,username", limit: "100" })}`,
-      },
+      ...["v24.0", "v25.0", "v26.0"].map((other) => ({
+        label: `assigned accounts (${other})`,
+        url: `https://graph.facebook.com/${other}/me/assigned_instagram_accounts?${query({ fields: "id,username", limit: "100" })}`,
+      })),
       {
         label: "media list (graph.facebook.com)",
         url: `${fb}/${account.instagramId}/media?${query(mediaFields)}`,
@@ -144,7 +157,7 @@ async function main() {
         const list = result.body.data;
         if (Array.isArray(list)) {
           let detail = `${list.length} item(s)`;
-          if (check.label === "assigned accounts") {
+          if (check.label.startsWith("assigned accounts")) {
             const ids = list.map((item) => (item as { id?: string }).id);
             detail += ids.includes(account.instagramId)
               ? ", stored id is among them"
