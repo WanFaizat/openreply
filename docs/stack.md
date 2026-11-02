@@ -19,7 +19,7 @@ For the step-by-step setup, see [setup.md](setup.md).
 | Styling | Tailwind CSS 4 |
 | Tests | Vitest 4 |
 | Worker runtime | `tsx` (runs `worker/dm-worker.ts`) |
-| Instagram | Official Meta Graph API (Facebook Login for Business) |
+| Instagram | Official Instagram API with Unified Login |
 
 ## Runtime — two processes, two datastores
 
@@ -49,7 +49,7 @@ worker + Postgres + Redis) are covered in [setup.md](setup.md).
 | Redis | Redis Cloud (Essentials) | Free (30 MB, TCP) |
 | Worker (24/7) | Oracle Cloud "Always Free" VM (VM.Standard.E2.1.Micro, Ubuntu 22.04, kept alive with `pm2`) | Free forever |
 | Login email | Resend | Free (3k emails/mo) |
-| Instagram API | Meta app with Facebook Login for Business | Free |
+| Instagram API | Meta app with Instagram API Unified Login | Free |
 
 ## Environment variables
 

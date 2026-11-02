@@ -1,7 +1,11 @@
 import { getMetaGraphApiVersion, requireEnv } from "@/lib/env";
 
-function instagramGraphBase() {
-  return facebookGraphBase();
+export type InstagramApiType = "META" | "INSTAGRAM" | "UNIFIED";
+
+function instagramGraphBase(apiType: InstagramApiType = "META") {
+  return apiType === "INSTAGRAM"
+    ? `https://graph.instagram.com/${getMetaGraphApiVersion()}`
+    : facebookGraphBase();
 }
 
 function facebookGraphBase() {
@@ -135,6 +139,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
       case 10:
       case 100:
       case 200:
+      case 403:
         throw new PermissionError(message, traceId);
       default:
         throw new MetaApiError(code, subcode, traceId, message);
@@ -148,10 +153,11 @@ export async function sendPrivateReply(
   accessToken: string,
   instagramAccountId: string,
   commentId: string,
-  message: string
+  message: string,
+  apiType: InstagramApiType = "META"
 ): Promise<{ recipient_id: string; message_id: string }> {
   const response = await fetch(
-    `${instagramGraphBase()}/${instagramAccountId}/messages`,
+    `${instagramGraphBase(apiType)}/${instagramAccountId}/messages`,
     {
       method: "POST",
       headers: {
@@ -180,10 +186,11 @@ export async function sendPrivateReplyWithButton(
   commentId: string,
   text: string,
   buttonTitle: string,
-  payload: string
+  payload: string,
+  apiType: InstagramApiType = "META"
 ): Promise<{ recipient_id: string; message_id: string }> {
   const response = await fetch(
-    `${instagramGraphBase()}/${instagramAccountId}/messages`,
+    `${instagramGraphBase(apiType)}/${instagramAccountId}/messages`,
     {
       method: "POST",
       headers: {
@@ -223,10 +230,11 @@ export async function sendDirectMessageWithButton(
   userId: string,
   text: string,
   buttonTitle: string,
-  payload: string
+  payload: string,
+  apiType: InstagramApiType = "META"
 ): Promise<{ recipient_id: string; message_id: string }> {
   const response = await fetch(
-    `${instagramGraphBase()}/${instagramAccountId}/messages`,
+    `${instagramGraphBase(apiType)}/${instagramAccountId}/messages`,
     {
       method: "POST",
       headers: {
@@ -263,9 +271,10 @@ export async function sendDirectMessageWithButton(
  */
 export async function getUserFollowStatus(
   accessToken: string,
-  recipientId: string
+  recipientId: string,
+  apiType: InstagramApiType = "META"
 ): Promise<boolean | null> {
-  const url = new URL(`${instagramGraphBase()}/${recipientId}`);
+  const url = new URL(`${instagramGraphBase(apiType)}/${recipientId}`);
   url.searchParams.set("fields", "is_user_follow_business");
 
   try {
@@ -308,10 +317,11 @@ export async function sendPrivateReplyWithLinkButton(
   instagramAccountId: string,
   commentId: string,
   text: string,
-  buttons: LinkButton[]
+  buttons: LinkButton[],
+  apiType: InstagramApiType = "META"
 ): Promise<{ recipient_id: string; message_id: string }> {
   const response = await fetch(
-    `${instagramGraphBase()}/${instagramAccountId}/messages`,
+    `${instagramGraphBase(apiType)}/${instagramAccountId}/messages`,
     {
       method: "POST",
       headers: {
@@ -345,10 +355,11 @@ export async function sendDirectMessage(
   accessToken: string,
   instagramAccountId: string,
   userId: string,
-  message: string
+  message: string,
+  apiType: InstagramApiType = "META"
 ): Promise<{ recipient_id: string; message_id: string }> {
   const response = await fetch(
-    `${instagramGraphBase()}/${instagramAccountId}/messages`,
+    `${instagramGraphBase(apiType)}/${instagramAccountId}/messages`,
     {
       method: "POST",
       headers: {
@@ -374,10 +385,11 @@ export async function sendDirectMessageWithLinkButton(
   instagramAccountId: string,
   userId: string,
   text: string,
-  buttons: LinkButton[]
+  buttons: LinkButton[],
+  apiType: InstagramApiType = "META"
 ): Promise<{ recipient_id: string; message_id: string }> {
   const response = await fetch(
-    `${instagramGraphBase()}/${instagramAccountId}/messages`,
+    `${instagramGraphBase(apiType)}/${instagramAccountId}/messages`,
     {
       method: "POST",
       headers: {
@@ -406,10 +418,11 @@ export async function sendDirectMessageWithLinkButton(
 export async function sendCommentReply(
   accessToken: string,
   commentId: string,
-  message: string
+  message: string,
+  apiType: InstagramApiType = "META"
 ): Promise<{ id: string }> {
   const response = await fetch(
-    `${instagramGraphBase()}/${commentId}/replies`,
+    `${instagramGraphBase(apiType)}/${commentId}/replies`,
     {
       method: "POST",
       headers: {
@@ -425,9 +438,10 @@ export async function sendCommentReply(
 
 export async function getMediaComments(
   accessToken: string,
-  mediaId: string
+  mediaId: string,
+  apiType: InstagramApiType = "META"
 ): Promise<InstagramComment[]> {
-  const url = new URL(`${instagramGraphBase()}/${mediaId}/comments`);
+  const url = new URL(`${instagramGraphBase(apiType)}/${mediaId}/comments`);
   url.searchParams.set("fields", "id,text,from,timestamp");
   url.searchParams.set("access_token", accessToken);
 
@@ -451,11 +465,12 @@ export async function getRecentMediaComments(
   accessToken: string,
   mediaId: string,
   sinceMs: number,
-  max = 800
+  max = 800,
+  apiType: InstagramApiType = "META"
 ): Promise<InstagramComment[]> {
   const results: InstagramComment[] = [];
 
-  const first = new URL(`${instagramGraphBase()}/${mediaId}/comments`);
+  const first = new URL(`${instagramGraphBase(apiType)}/${mediaId}/comments`);
   first.searchParams.set("fields", "id,text,timestamp,from,replies{from}");
   first.searchParams.set("order", "reverse_chronological");
   first.searchParams.set("limit", "50");
@@ -518,7 +533,8 @@ export interface InstagramConversation {
  */
 export async function getConversations(
   accessToken: string,
-  igUserId: string
+  igUserId: string,
+  apiType: InstagramApiType = "META"
 ): Promise<InstagramConversation[]> {
   const fields =
     "participants,updated_time,messages.limit(1){message,from,created_time}";
@@ -535,7 +551,7 @@ export async function getConversations(
   async function readPage(limit: number, requestedFields: string): Promise<Page> {
     // Never follow Meta's next URL: rebuild on our trusted host and carry the
     // token separately. A messages.paging cursor must never advance this list.
-    const url = new URL(`${instagramGraphBase()}/${igUserId}/conversations`);
+    const url = new URL(`${instagramGraphBase(apiType)}/${igUserId}/conversations`);
     url.searchParams.set("platform", "instagram");
     url.searchParams.set("fields", requestedFields);
     url.searchParams.set("limit", String(limit));
@@ -603,9 +619,10 @@ export async function getConversations(
  */
 export async function getConversationMessages(
   accessToken: string,
-  conversationId: string
+  conversationId: string,
+  apiType: InstagramApiType = "META"
 ): Promise<InstagramMessage[]> {
-  const url = new URL(`${instagramGraphBase()}/${conversationId}`);
+  const url = new URL(`${instagramGraphBase(apiType)}/${conversationId}`);
   url.searchParams.set("fields", "messages{id,created_time,from,to,message}");
   url.searchParams.set("access_token", accessToken);
 
@@ -618,9 +635,10 @@ export async function getConversationMessages(
 
 export async function getUserInfo(
   accessToken: string,
-  instagramAccountId: string
+  instagramAccountId: string,
+  apiType: InstagramApiType = "META"
 ): Promise<InstagramUser> {
-  const url = new URL(`${instagramGraphBase()}/${instagramAccountId}`);
+  const url = new URL(`${instagramGraphBase(apiType)}/${instagramAccountId}`);
   url.searchParams.set(
     "fields",
     "id,username,name,profile_picture_url,followers_count"
@@ -629,41 +647,90 @@ export async function getUserInfo(
 
   const response = await fetch(url.toString());
   const user = await handleResponse<InstagramUser>(response);
-  return { ...user, user_id: user.id };
+  return { ...user, user_id: user.user_id ?? user.id };
 }
 
-export async function getInstagramAccountFromPages(
-  userAccessToken: string
-): Promise<{ accessToken: string; userInfo: InstagramUser }> {
-  const url = new URL(`${facebookGraphBase()}/me/accounts`);
+export async function discoverInstagramAccount(
+  accessToken: string,
+  tokenExpiresIn: number | null
+): Promise<{
+  accessToken: string;
+  userInfo: InstagramUser;
+  tokenExpiresAt: Date | null;
+}> {
+  const url = new URL(
+    `https://graph.instagram.com/${getMetaGraphApiVersion()}/me`
+  );
   url.searchParams.set(
     "fields",
-    "id,name,access_token,instagram_business_account{id,username,name,profile_picture_url,followers_count}"
+    "id,user_id,username,name,profile_picture_url,followers_count"
   );
-  url.searchParams.set("limit", "100");
-  url.searchParams.set("access_token", userAccessToken);
+  url.searchParams.set("access_token", accessToken);
 
   const response = await fetch(url.toString(), { cache: "no-store" });
-  const pages = await handleResponse<{
-    data: Array<{
-      access_token?: string;
-      instagram_business_account?: InstagramUser;
-    }>;
-  }>(response);
-  const linkedPage = pages.data.find(
-    (page) => page.access_token && page.instagram_business_account?.id
-  );
-
-  if (!linkedPage?.access_token || !linkedPage.instagram_business_account) {
+  const userInfo = await handleResponse<InstagramUser>(response);
+  const instagramId = userInfo.user_id ?? userInfo.id;
+  if (!instagramId || !userInfo.username) {
     throw new Error(
-      "No Instagram professional account was found on the Facebook Pages granted to this app"
+      "Instagram /me did not return the professional account ID and username"
     );
   }
 
-  const userInfo = linkedPage.instagram_business_account;
   return {
-    accessToken: linkedPage.access_token,
-    userInfo: { ...userInfo, user_id: userInfo.id },
+    accessToken,
+    userInfo: { ...userInfo, id: userInfo.id ?? instagramId, user_id: instagramId },
+    tokenExpiresAt:
+      tokenExpiresIn === null
+        ? null
+        : new Date(Date.now() + tokenExpiresIn * 1000),
+  };
+}
+
+export async function discoverUnifiedInstagramAccounts(
+  accessToken: string
+): Promise<{ clientBusinessId: string; accounts: InstagramUser[] }> {
+  const graphBase = facebookGraphBase();
+  const businessUrl = new URL(`${graphBase}/me`);
+  businessUrl.searchParams.set("fields", "client_business_id");
+  businessUrl.searchParams.set("access_token", accessToken);
+
+  const businessResponse = await fetch(businessUrl.toString(), {
+    cache: "no-store",
+  });
+  const business = await handleResponse<{ client_business_id?: string }>(
+    businessResponse
+  );
+  if (!business.client_business_id) {
+    throw new Error(
+      "Unified Login did not return a client business ID for this connection"
+    );
+  }
+
+  const accountsUrl = new URL(`${graphBase}/me/assigned_instagram_accounts`);
+  accountsUrl.searchParams.set("fields", "id,username");
+  accountsUrl.searchParams.set("limit", "100");
+  accountsUrl.searchParams.set("access_token", accessToken);
+  const accountsResponse = await fetch(accountsUrl.toString(), {
+    cache: "no-store",
+  });
+  const assigned = await handleResponse<{ data?: InstagramUser[] }>(
+    accountsResponse
+  );
+  const accounts = (assigned.data ?? []).filter(
+    (account) => account.id && account.username
+  );
+  if (accounts.length === 0) {
+    throw new Error(
+      "Unified Login returned no assigned Instagram accounts. Select the professional Instagram account to share in the Meta login flow and verify instagram_basic is enabled."
+    );
+  }
+
+  return {
+    clientBusinessId: business.client_business_id,
+    accounts: accounts.map((account) => ({
+      ...account,
+      user_id: account.id,
+    })),
   };
 }
 
@@ -676,9 +743,10 @@ const MEDIA_PAGE_SIZE = 100;
 export async function getUserMedia(
   accessToken: string,
   instagramAccountId: string,
-  limit = 25
+  limit = 25,
+  apiType: InstagramApiType = "META"
 ): Promise<InstagramMedia[]> {
-  const url = new URL(`${instagramGraphBase()}/${instagramAccountId}/media`);
+  const url = new URL(`${instagramGraphBase(apiType)}/${instagramAccountId}/media`);
   url.searchParams.set("fields", MEDIA_FIELDS);
   url.searchParams.set("limit", limit.toString());
   url.searchParams.set("access_token", accessToken);
@@ -697,11 +765,12 @@ export async function getUserMedia(
 export async function getAllUserMedia(
   accessToken: string,
   instagramAccountId: string,
-  max = 500
+  max = 500,
+  apiType: InstagramApiType = "META"
 ): Promise<InstagramMedia[]> {
   const results: InstagramMedia[] = [];
 
-  const first = new URL(`${instagramGraphBase()}/${instagramAccountId}/media`);
+  const first = new URL(`${instagramGraphBase(apiType)}/${instagramAccountId}/media`);
   first.searchParams.set("fields", MEDIA_FIELDS);
   first.searchParams.set("limit", String(Math.min(MEDIA_PAGE_SIZE, max)));
   first.searchParams.set("access_token", accessToken);
@@ -732,9 +801,10 @@ export async function getAllUserMedia(
 export async function getMediaInsights(
   accessToken: string,
   mediaId: string,
-  metrics: string[]
+  metrics: string[],
+  apiType: InstagramApiType = "META"
 ): Promise<InstagramMediaInsights> {
-  const url = new URL(`${instagramGraphBase()}/${mediaId}/insights`);
+  const url = new URL(`${instagramGraphBase(apiType)}/${mediaId}/insights`);
   url.searchParams.set("metric", metrics.join(","));
   url.searchParams.set("access_token", accessToken);
 
@@ -778,13 +848,14 @@ const FOLLOWER_INSIGHT_MAX_DAYS = 30;
 export async function getFollowerCountSeries(
   accessToken: string,
   instagramAccountId: string,
-  days: number = FOLLOWER_INSIGHT_MAX_DAYS
+  days: number = FOLLOWER_INSIGHT_MAX_DAYS,
+  apiType: InstagramApiType = "META"
 ): Promise<FollowerCountPoint[] | null> {
   const span = Math.min(Math.max(days, 1), FOLLOWER_INSIGHT_MAX_DAYS);
   const until = Math.floor(Date.now() / 1000);
   const since = until - (span - 1) * 86_400;
 
-  const url = new URL(`${instagramGraphBase()}/${instagramAccountId}/insights`);
+  const url = new URL(`${instagramGraphBase(apiType)}/${instagramAccountId}/insights`);
   url.searchParams.set("metric", "follower_count");
   url.searchParams.set("period", "day");
   url.searchParams.set("since", String(since));
@@ -820,17 +891,13 @@ export async function getFollowerCountSeries(
   }
 }
 
-export async function getLongLivedToken(
+export async function getLongLivedInstagramToken(
   shortLivedToken: string
 ): Promise<{ accessToken: string; expiresIn: number }> {
-  const url = new URL(`${facebookGraphBase()}/oauth/access_token`);
-  url.searchParams.set("grant_type", "fb_exchange_token");
-  url.searchParams.set("client_id", requireEnv("INSTAGRAM_APP_ID"));
-  url.searchParams.set(
-    "client_secret",
-    process.env.FACEBOOK_APP_SECRET || requireEnv("INSTAGRAM_APP_SECRET")
-  );
-  url.searchParams.set("fb_exchange_token", shortLivedToken);
+  const url = new URL("https://graph.instagram.com/access_token");
+  url.searchParams.set("grant_type", "ig_exchange_token");
+  url.searchParams.set("client_secret", requireEnv("INSTAGRAM_APP_SECRET"));
+  url.searchParams.set("access_token", shortLivedToken);
 
   const response = await fetch(url.toString(), { cache: "no-store" });
   const data = await handleResponse<TokenResponse>(response);
@@ -842,8 +909,27 @@ export async function getLongLivedToken(
 }
 
 export async function refreshLongLivedToken(
-  longLivedToken: string
+  longLivedToken: string,
+  apiType: InstagramApiType = "META"
 ): Promise<{ accessToken: string; expiresIn: number }> {
+  if (apiType === "UNIFIED") {
+    throw new Error(
+      "Unified Login access tokens are managed by Meta's Business Integration System User token API; reconnect if the token expires."
+    );
+  }
+  if (apiType === "INSTAGRAM") {
+    const url = new URL("https://graph.instagram.com/refresh_access_token");
+    url.searchParams.set("grant_type", "ig_refresh_token");
+    url.searchParams.set("access_token", longLivedToken);
+
+    const response = await fetch(url.toString(), { cache: "no-store" });
+    const data = await handleResponse<TokenResponse>(response);
+    return {
+      accessToken: data.access_token,
+      expiresIn: data.expires_in ?? 5184000,
+    };
+  }
+
   const url = new URL(`${facebookGraphBase()}/oauth/access_token`);
   url.searchParams.set("grant_type", "fb_exchange_token");
   url.searchParams.set("client_id", requireEnv("INSTAGRAM_APP_ID"));
@@ -864,10 +950,11 @@ export async function refreshLongLivedToken(
 
 export async function subscribeInstagramAccountToWebhooks(
   instagramAccountId: string,
-  accessToken: string
+  accessToken: string,
+  apiType: InstagramApiType = "META"
 ): Promise<{ success: boolean }> {
   const response = await fetch(
-    `${instagramGraphBase()}/${instagramAccountId}/subscribed_apps`,
+    `${instagramGraphBase(apiType)}/${instagramAccountId}/subscribed_apps`,
     {
       method: "POST",
       headers: {

@@ -21,7 +21,7 @@ interface SettingsData {
   } | null;
   instagramAccounts: Array<
     AccountOption & {
-      provider?: "META" | "ZERNIO";
+      provider?: "META" | "INSTAGRAM" | "UNIFIED" | "ZERNIO";
       tokenExpiresAt: string | null;
       webhookSubscribed: boolean;
     }

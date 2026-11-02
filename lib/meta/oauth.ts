@@ -92,28 +92,58 @@ export function getAuthorizationUrl(redirectUri: string, state: string): string 
     config_id: META_LOGIN_CONFIG_ID,
     redirect_uri: redirectUri,
     response_type: "code",
-    override_default_response_type: "true",
     state,
+    prompt: "login",
   });
 
-  return `https://www.facebook.com/${getMetaGraphApiVersion()}/dialog/oauth?${params.toString()}`;
+  return `https://www.facebook.com/dialog/oauth?${params.toString()}`;
+}
+
+export function getMetaLoginConfigId(): string {
+  return META_LOGIN_CONFIG_ID;
+}
+
+export function sanitizeErrorMessage(
+  error: unknown,
+  sensitiveValues: Array<string | undefined> = []
+): string {
+  let message = error instanceof Error ? error.message : "Unknown error";
+  for (const value of sensitiveValues) {
+    if (!value) continue;
+    message = message.split(value).join("[REDACTED]");
+    const encodedValue = encodeURIComponent(value);
+    if (encodedValue !== value) {
+      message = message.split(encodedValue).join("[REDACTED]");
+    }
+  }
+
+  return message
+    .replace(
+      /(\b(?:access_token|accessToken)\s*[:=]\s*["']?)[^"',\s}&]+/gi,
+      "$1[REDACTED]"
+    )
+    .replace(/(access_token=)[^&\s]+/gi, "$1[REDACTED]");
 }
 
 export async function exchangeCodeForToken(
   code: string,
   redirectUri: string
-): Promise<{ accessToken: string }> {
+): Promise<{ accessToken: string; expiresIn: number | null }> {
   const url = new URL(
     `https://graph.facebook.com/${getMetaGraphApiVersion()}/oauth/access_token`
   );
   url.search = new URLSearchParams({
     client_id: requireEnv("INSTAGRAM_APP_ID"),
     client_secret: requireMetaAppSecret(),
-    redirect_uri: redirectUri,
     code,
+    redirect_uri: redirectUri,
   }).toString();
 
-  const response = await fetch(url.toString(), { cache: "no-store" });
+  // Unified Login's token exchange is a server-side GET and returns a
+  // Business Integration System User access token.
+  const response = await fetch(url.toString(), {
+    cache: "no-store",
+  });
 
   if (!response.ok) {
     const error = await response.json();
@@ -126,11 +156,17 @@ export async function exchangeCodeForToken(
   if (typeof data.access_token !== "string" || !data.access_token) {
     throw new Error("Token exchange response did not include an access token");
   }
-  return { accessToken: data.access_token };
+  return {
+    accessToken: data.access_token,
+    expiresIn:
+      typeof data.expires_in === "number" && Number.isFinite(data.expires_in)
+        ? data.expires_in
+        : null,
+  };
 }
 
 function requireMetaAppSecret(): string {
-  return process.env.FACEBOOK_APP_SECRET || requireEnv("INSTAGRAM_APP_SECRET");
+  return requireEnv("FACEBOOK_APP_SECRET");
 }
 
 function getEncryptionKey(): Buffer {

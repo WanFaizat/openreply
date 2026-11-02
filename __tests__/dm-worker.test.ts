@@ -140,7 +140,6 @@ vi.mock("bullmq", () => {
 import { MetaApiError, RateLimitError } from "@/lib/meta/client";
 import { createDMWorker } from "../lib/queue/dm-worker";
 import { getRedisConnection } from "@/lib/queue/client";
-import { hashRecipientId } from "@/lib/tracking/server";
 
 const usagePeriodStart = new Date("2026-05-01T00:00:00.000Z");
 
@@ -560,7 +559,7 @@ describe("DM Worker — Full Pipeline", () => {
     );
   });
 
-  it("should deliver tracked links as web_url buttons (one or two)", async () => {
+  it("should deliver configured destination URLs as web_url buttons (one or two)", async () => {
     mockPrisma.automation.findMany.mockResolvedValue([
       {
         ...mockAutomation,
@@ -585,17 +584,16 @@ describe("DM Worker — Full Pipeline", () => {
     await processor(createMockJob());
 
     // Primary button title comes from linkButtonLabel; the second from its
-    // own stored label. Both point at their tracked /r/<slug> URLs, tagged
-    // with the commenter's recipient token.
-    const token = hashRecipientId(mockJobData.commenterId);
+    // own stored label. Destinations are sent directly, independent of the
+    // app's tracking URL host.
     expect(mockSendPrivateReplyWithLinkButton).toHaveBeenCalledWith(
       "decrypted_token",
       "ig_456",
       "comment_555",
       "Hey commenter_user! Here is the offer:",
       [
-        { title: "Get offer", url: `http://localhost:3000/r/abc123?r=${token}` },
-        { title: "Book a call", url: `http://localhost:3000/r/def456?r=${token}` },
+        { title: "Get offer", url: "https://example.com" },
+        { title: "Book a call", url: "https://example.com/book" },
       ]
     );
   });
@@ -665,12 +663,7 @@ describe("DM Worker — Full Pipeline", () => {
       "ig_456",
       "comment_555",
       "Hey commenter_user! Here is the offer:",
-      [
-        {
-          title: "Get offer",
-          url: `http://localhost:3000/r/abc123?r=${hashRecipientId(mockJobData.commenterId)}`,
-        },
-      ]
+      [{ title: "Get offer", url: "https://example.com" }]
     );
   });
 
@@ -984,6 +977,12 @@ describe("DM Worker — one private reply per comment", () => {
     await processor(createMockJob());
 
     expect(mockSendPrivateReply).toHaveBeenCalled();
+    expect(mockSendPrivateReply).toHaveBeenCalledWith(
+      "decrypted_token",
+      "ig_456",
+      "comment_555",
+      "Hey commenter_user! Here is the link: https://example.com"
+    );
     expect(mockPrisma.dmLog.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: "SENT" }),
@@ -1084,7 +1083,7 @@ describe("DM Worker — DM keyword trigger", () => {
     expect(mockReserveWorkspaceDMSend).not.toHaveBeenCalled();
   });
 
-  it("should send the link as buttons when the campaign has tracked links", async () => {
+  it("should send the configured destination URL as a button for DM triggers", async () => {
     mockPrisma.automation.findMany.mockResolvedValue([
       {
         ...dmTriggerAutomation,
@@ -1102,7 +1101,13 @@ describe("DM Worker — DM keyword trigger", () => {
     const processor = getProcessor();
     await processor(createMockMessageJob());
 
-    expect(mockSendDirectMessageWithLinkButton).toHaveBeenCalled();
+    expect(mockSendDirectMessageWithLinkButton).toHaveBeenCalledWith(
+      "decrypted_token",
+      "ig_456",
+      "commenter_999",
+      "Hey commenter_user! Here is the link: https://example.com",
+      [{ title: "Get it", url: "https://example.com/offer" }]
+    );
     expect(mockSendDirectMessage).not.toHaveBeenCalled();
   });
 

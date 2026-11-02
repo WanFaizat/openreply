@@ -21,12 +21,13 @@ export async function getRecentMediaComments({
   sinceMs: number;
   max?: number;
 }): Promise<meta.InstagramComment[]> {
-  if (context.provider === "META")
+  if (context.provider !== "ZERNIO")
     return meta.getRecentMediaComments(
       context.accessToken,
       mediaId,
       sinceMs,
-      max
+      max,
+      ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
     );
   const results: meta.InstagramComment[] = [];
   const seen = new Set<string>();
@@ -69,8 +70,13 @@ export async function getUserMedia({
   context: InstagramContext;
   limit?: number;
 }): Promise<meta.InstagramMedia[]> {
-  if (context.provider === "META")
-    return meta.getUserMedia(context.accessToken, context.instagramId, limit);
+  if (context.provider !== "ZERNIO")
+    return meta.getUserMedia(
+      context.accessToken,
+      context.instagramId,
+      limit,
+      ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
+    );
   const result = await zernioRequest<{
     posts: {
       id: string;
@@ -115,8 +121,13 @@ export async function getAllUserMedia({
   context: InstagramContext;
   max?: number;
 }) {
-  return context.provider === "META"
-    ? meta.getAllUserMedia(context.accessToken, context.instagramId, max)
+  return context.provider !== "ZERNIO"
+    ? meta.getAllUserMedia(
+        context.accessToken,
+        context.instagramId,
+        max,
+        ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
+      )
     : getUserMedia({ context, limit: max });
 }
 
@@ -125,8 +136,12 @@ export async function getUserInfo({
 }: {
   context: InstagramContext;
 }): Promise<meta.InstagramUser> {
-  if (context.provider === "META")
-    return meta.getUserInfo(context.accessToken, context.instagramId);
+  if (context.provider !== "ZERNIO")
+    return meta.getUserInfo(
+      context.accessToken,
+      context.instagramId,
+      ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
+    );
   const result = await zernioRequest<{
     accounts: {
       _id: string;

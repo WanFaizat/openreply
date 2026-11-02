@@ -4,13 +4,14 @@ import { prisma } from "@/lib/db/client";
 import { getBaseUrl } from "@/lib/env";
 import { canConnectInstagramAccount } from "@/lib/instagram-accounts";
 import {
-  getInstagramAccountFromPages,
-  getLongLivedToken,
+  discoverUnifiedInstagramAccounts,
   subscribeInstagramAccountToWebhooks,
 } from "@/lib/meta/client";
 import {
   encryptToken,
   exchangeCodeForToken,
+  getMetaLoginConfigId,
+  sanitizeErrorMessage,
   verifyOAuthState,
 } from "@/lib/meta/oauth";
 import { canManageWorkspace } from "@/lib/workspace-access";
@@ -45,21 +46,28 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${baseUrl}/settings?instagram=forbidden`);
   }
 
+  let accessTokenForError: string | undefined;
+  let encryptedTokenForError: string | undefined;
   try {
     const redirectUri = `${baseUrl}/api/instagram/callback`;
-    const { accessToken: shortLivedToken } = await exchangeCodeForToken(
+    const { accessToken, expiresIn } = await exchangeCodeForToken(
       code,
       redirectUri
     );
-    const { accessToken: longLivedUserToken } =
-      await getLongLivedToken(shortLivedToken);
-    const { accessToken: pageAccessToken, userInfo } =
-      await getInstagramAccountFromPages(longLivedUserToken);
-    // Webhooks and the messaging API key off the professional account ID
-    // (user_id), not the app-scoped `id`. Store user_id so comment webhooks
-    // can be matched back to this account. Fall back to id if user_id is
-    // ever absent.
-    const instagramId = userInfo.user_id ?? userInfo.id;
+    accessTokenForError = accessToken;
+    const tokenExpiresAt =
+      expiresIn === null ? null : new Date(Date.now() + expiresIn * 1000);
+    const {
+      clientBusinessId,
+      accounts,
+    } = await discoverUnifiedInstagramAccounts(accessToken);
+    if (accounts.length !== 1) {
+      throw new Error(
+        `Unified Login returned ${accounts.length} Instagram accounts. Configure the login to share exactly one account per OpenReply connection.`
+      );
+    }
+    const userInfo = accounts[0];
+    const instagramId = userInfo.id;
     const connection = await canConnectInstagramAccount({
       workspaceId: state.workspaceId,
       instagramId,
@@ -71,19 +79,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const encryptedToken = encryptToken(pageAccessToken);
+    const encryptedToken = encryptToken(accessToken);
+    encryptedTokenForError = encryptedToken;
 
-    let webhookSubscribed = false;
-    try {
-      const subscription = await subscribeInstagramAccountToWebhooks(
-        instagramId,
-        pageAccessToken
-      );
-      webhookSubscribed = Boolean(subscription.success);
-    } catch (subscriptionError) {
-      console.warn(
-        "[Instagram Callback] Webhook subscription failed:",
-        subscriptionError
+    const subscription = await subscribeInstagramAccountToWebhooks(
+      instagramId,
+      accessToken,
+      "UNIFIED"
+    );
+    if (!subscription.success) {
+      throw new Error(
+        "Meta did not confirm the Instagram webhook subscription. The account was not connected."
       );
     }
 
@@ -91,25 +97,41 @@ export async function GET(request: NextRequest) {
       username: userInfo.username,
       name: userInfo.name,
       accessToken: encryptedToken,
-      // Page access tokens derived from a long-lived user token do not use the
-      // Instagram Login 60-day refresh flow; reconnect if Meta revokes access.
-      tokenExpiresAt: null,
-      webhookSubscribed,
+      clientBusinessId,
+      metaLoginConfigId: getMetaLoginConfigId(),
+      tokenExpiresAt,
+      webhookSubscribed: true,
+      provider: "UNIFIED" as const,
     };
-    const existing = await prisma.instagramAccount.findUnique({ where: { instagramId } });
+    const existing = await prisma.instagramAccount.findUnique({
+      where: { instagramId },
+    });
     if (existing) {
       const updated = await prisma.instagramAccount.updateMany({
-        where: { id: existing.id, workspaceId: state.workspaceId, provider: 'META' }, data,
+        where: {
+          id: existing.id,
+          workspaceId: state.workspaceId,
+          provider: { in: ["META", "INSTAGRAM", "UNIFIED"] },
+        },
+        data,
       });
-      if (!updated.count) return NextResponse.redirect(`${baseUrl}/settings?instagram=already_connected`);
+      if (!updated.count)
+        return NextResponse.redirect(
+          `${baseUrl}/settings?instagram=already_connected`
+        );
     } else {
-      await prisma.instagramAccount.create({ data: { ...data, workspaceId: state.workspaceId, instagramId, provider: 'META' } });
+      await prisma.instagramAccount.create({
+        data: { ...data, workspaceId: state.workspaceId, instagramId },
+      });
     }
 
     return NextResponse.redirect(`${baseUrl}/dashboard?connected=true`);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("[Instagram Callback] Error:", err);
+    const message = sanitizeErrorMessage(err, [
+      accessTokenForError,
+      encryptedTokenForError,
+    ]);
+    console.error("[Instagram Callback] Error:", message);
     // The message is the only diagnostic a self-hoster gets for a failed
     // connect, so persist it alongside the other operational events rather
     // than leaving it in server logs they may not be able to reach.

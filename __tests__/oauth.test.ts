@@ -4,11 +4,17 @@ import {
   createOAuthState,
   decryptToken,
   encryptToken,
+  exchangeCodeForToken,
+  getAuthorizationUrl,
+  sanitizeErrorMessage,
   verifyOAuthState,
 } from "../lib/meta/oauth";
 
 beforeEach(() => {
   vi.stubEnv("NEXTAUTH_SECRET", "test-secret-with-enough-length");
+  vi.stubEnv("INSTAGRAM_APP_ID", "1671833827801953");
+  vi.stubEnv("META_LOGIN_CONFIG_ID", "1390388576643422");
+  vi.stubEnv("FACEBOOK_APP_SECRET", "test-meta-app-secret");
   vi.stubEnv(
     "ENCRYPTION_KEY",
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -83,5 +89,63 @@ describe("OAuth state and token encryption", () => {
         signedState({ workspaceId: 123, ts: Date.now() })
       )
     ).toBeNull();
+  });
+
+  it("builds a Unified Login URL with its config ID and signed dynamic state", () => {
+    const state = createOAuthState("workspace_123");
+    const url = new URL(getAuthorizationUrl("https://example.com/callback", state));
+
+    expect(url.origin).toBe("https://www.facebook.com");
+    expect(url.pathname).toBe("/dialog/oauth");
+    expect(url.searchParams.get("client_id")).toBe("1671833827801953");
+    expect(url.searchParams.get("config_id")).toBe("1390388576643422");
+    expect(url.searchParams.get("redirect_uri")).toBe("https://example.com/callback");
+    expect(url.searchParams.get("state")).toBe(state);
+    expect(url.searchParams.get("response_type")).toBe("code");
+    expect(url.searchParams.get("prompt")).toBe("login");
+  });
+
+  it("exchanges the authorization code with Meta for a Unified Login token", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ access_token: "business-integration-token" }),
+        { status: 200 }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      exchangeCodeForToken(
+        "authorization-code",
+        "https://example.com/api/instagram/callback"
+      )
+    ).resolves.toEqual({
+      accessToken: "business-integration-token",
+      expiresIn: null,
+    });
+
+    const requestUrl = new URL(fetchMock.mock.calls[0][0]);
+    expect(requestUrl.origin).toBe("https://graph.facebook.com");
+    expect(requestUrl.pathname).toBe("/v25.0/oauth/access_token");
+    expect(requestUrl.searchParams.get("client_id")).toBe("1671833827801953");
+    expect(requestUrl.searchParams.get("code")).toBe("authorization-code");
+    expect(requestUrl.searchParams.get("redirect_uri")).toBe(
+      "https://example.com/api/instagram/callback"
+    );
+    expect(fetchMock.mock.calls[0][1].cache).toBe("no-store");
+  });
+
+  it("redacts raw and encrypted tokens from callback error messages", () => {
+    const rawToken = "unified-access-token-value";
+    const encryptedToken = "encrypted/token+value==";
+    const error = new Error(
+      `Invalid create({ accessToken: "${encryptedToken}" }); access_token=${rawToken}`
+    );
+
+    expect(
+      sanitizeErrorMessage(error, [rawToken, encryptedToken])
+    ).toBe(
+      'Invalid create({ accessToken: "[REDACTED]" }); access_token=[REDACTED]'
+    );
   });
 });

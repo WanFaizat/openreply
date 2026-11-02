@@ -9,7 +9,7 @@ If you use a coding assistant, start with [Set it up with an AI assistant](#set-
 | Connection | What you configure | Costs |
 | --- | --- | --- |
 | **[Zernio](zernio.md), recommended for simpler connection setup** | A Zernio API key in Settings, a profile, and an Instagram account. OpenReply registers the webhook. No own Meta app or Meta secrets required. | Optional paid provider, plus your hosting. Zernio sponsors OpenReply. |
-| **[Your own Meta app](#the-meta-app)** | Your Meta app, Facebook Login for Business, app secrets, webhook, and App Review where required. | Your hosting and any other services you use. No Zernio subscription. |
+| **[Your own Meta app](#the-meta-app)** | Your Meta app, Instagram API Unified Login configuration, app secret, webhook, and App Review where required. | Your hosting and any other services you use. No Zernio subscription. |
 
 Both use the official Instagram API and remain subject to Instagram’s policies, account requirements, permissions, rate limits, and messaging windows. Both need PostgreSQL, Redis, email delivery, and a running worker. Existing connections are not migrated automatically.
 
@@ -113,10 +113,10 @@ Copy `.env.example` to `.env` for local work, or set these in Vercel and Railway
 | Variable | What it is |
 | --- | --- |
 | `META_GRAPH_API_VERSION` | Graph API version, for example `v25.0`. |
-| `INSTAGRAM_APP_ID` | Facebook App ID for the Meta app. |
-| `META_LOGIN_CONFIG_ID` | Facebook Login for Business configuration ID. Defaults to OpenReply's configured Meta login. |
-| `FACEBOOK_APP_SECRET` | From the Meta app's App settings, Basic page. |
-| `INSTAGRAM_APP_SECRET` | Optional legacy-compatible app secret variable; use `FACEBOOK_APP_SECRET` for new deployments. |
+| `INSTAGRAM_APP_ID` | Your Meta App ID (the existing variable name is retained for compatibility). |
+| `META_LOGIN_CONFIG_ID` | Facebook Login for Business config ID from Instagram API setup with Unified Login. Defaults to `1390388576643422`. |
+| `FACEBOOK_APP_SECRET` | Your Meta App Secret from App Settings > Basic. Required for Unified Login token exchange. |
+| `INSTAGRAM_APP_SECRET` | Optional legacy Instagram App Secret used only by existing Instagram Login connections. |
 | `WEBHOOK_VERIFY_TOKEN` | Any random string. You paste the same value into Meta's webhook config. |
 
 `ENCRYPTION_KEY` must be exactly 64 hex characters or the app throws on boot.
@@ -148,32 +148,29 @@ Go to [developers.facebook.com/apps](https://developers.facebook.com/apps) and c
 - App type: Business.
 - Contact email: one you actually check.
 
-When it asks you to add a use case, choose the Instagram messaging/content use case and enable Facebook Login for Business. OpenReply uses Meta's Unified Login dialog with a Business Login configuration; it does not use the retired Instagram Login authorization flow. Do not add the Marketing API use case.
+When it asks you to add a use case, choose **Manage messaging & content on Instagram**. This app uses **Instagram API with Unified Login**, which uses Facebook Login for Business configurations. Do not add the Marketing API use case.
 
 If you accidentally added the Marketing API use case, remove it. It has its own heavy review requirements and can block publishing.
 
-### Step 5: Configure Business Login and collect credentials
+### Step 5: Configure Unified Login and collect credentials
 
-Open Facebook Login for Business in the Meta app dashboard and create or select the configuration used by this deployment. Include the Instagram and Page permissions the product needs: `instagram_basic`, `instagram_manage_comments`, `instagram_manage_messages`, `instagram_manage_insights`, `pages_show_list`, and `pages_read_engagement`. The app's configured Business Login ID is `1390388576643422`; set `META_LOGIN_CONFIG_ID` if you use a different configuration. The configuration must belong to the same Meta app as `INSTAGRAM_APP_ID`.
-
-Use the Facebook App ID and app secret from App settings, Basic. The app ID configured for OpenReply is `1671833827801953`.
+In the app dashboard, open **Use cases > Manage messaging & content on Instagram > Customize > API setup with Unified login**. Select the existing configuration `1390388576643422` (or set `META_LOGIN_CONFIG_ID` to your chosen compatible configuration). It must include `instagram_basic`, `instagram_manage_comments`, and `instagram_manage_messages`. OpenReply does not use ads, so do not add `ads_management`, `ads_read`, or an ad account asset. The configuration prompts the client to select a business portfolio and the Instagram professional account to share. A Facebook Page is not required, and OpenReply does not require you to create a system user manually.
 
 | Environment variable | Where it lives |
 | --- | --- |
-| `INSTAGRAM_APP_ID` | Facebook App ID from App settings, Basic |
-| `FACEBOOK_APP_SECRET` | App settings, Basic, App secret, click Show |
+| `INSTAGRAM_APP_ID` | Meta App ID from App Settings > Basic |
+| `META_LOGIN_CONFIG_ID` | Instagram API setup with Unified Login > configuration ID |
+| `FACEBOOK_APP_SECRET` | Meta App Secret from App Settings > Basic |
 
-`INSTAGRAM_APP_SECRET` remains accepted for existing installations, but new installations should set `FACEBOOK_APP_SECRET`. Webhook signature verification accepts either secret.
+Unified Login returns a Business Integration System User Access Token (SUAT) generated by Meta for the selected business. This is the token type required by the Unified Login API; it is not a manually created Business Settings system-user token and must not be exchanged or refreshed as an Instagram Login token.
 
 ### Step 6: Add your Instagram account as a tester, and accept the invite
 
-In development, only Facebook accounts with a role on your app can authorize. Add the Facebook user who manages the Instagram professional account as an app tester/developer and accept the invitation.
-
-The Instagram account must be a Business or Creator account linked to a Facebook Page. In the Business Login configuration, grant the Page and Instagram permissions for the Page/account the user selects.
+The client needs access to the business portfolio that owns the Instagram asset. In development, follow Meta's setup instructions for testing your own account. The Instagram account must be Business or Creator; it does not need to be linked to a Facebook Page or moved to another business portfolio.
 
 ### Step 7: Register the OAuth redirect
 
-In Facebook Login for Business settings, add this exact OAuth redirect URI, using your deployment domain:
+In the Unified Login configuration's Redirect URL setting, add this exact OAuth redirect URI, using your deployment domain:
 
 ```
 https://your-app.vercel.app/api/instagram/callback
@@ -181,7 +178,7 @@ https://your-app.vercel.app/api/instagram/callback
 
 No trailing slash. If this is missing or wrong, connecting an account fails with a redirect_uri mismatch. You can register more than one, which is useful if you change domains later; keep the old and new both listed.
 
-The callback must match `NEXTAUTH_URL` exactly. OpenReply builds the login URL using the configured Business Login ID. Users connect from Settings by clicking Connect Instagram.
+The callback must match `NEXTAUTH_URL` exactly and must also match the redirect URI saved in the selected configuration. The connect URL uses the Meta App ID and `config_id`.
 
 ### Step 8: Configure the webhook
 
@@ -220,13 +217,13 @@ A published app still holds **Standard Access** to the configured Instagram and 
 
 So connecting a second account fails even though the first one works, on the same app, with the same code.
 
-The symptom: Facebook login succeeds, but `/me/accounts` does not return a Page with an `instagram_business_account`. Confirm the user selected the correct Page and granted the permissions in the Business Login configuration. OpenReply then uses that Page access token against `graph.facebook.com` for Instagram Graph operations.
+OpenReply exchanges the authorization code for a Business Integration System User Access Token, gets the selected business ID from `GET /me?fields=client_business_id`, and discovers selected Instagram assets from `GET /me/assigned_instagram_accounts?fields=id,username`. It uses the returned Instagram professional account ID on `graph.facebook.com`. If the account is not discovered, verify the selected business portfolio, shared Instagram asset, `instagram_basic`, configuration ID, and redirect URL. This flow never calls `/me/accounts` and does not depend on a Facebook Page.
 
 ```
 Unsupported request - method type: get  [code=100]
 ```
 
-For accounts outside app roles, request Advanced Access through App Review — see [META_APP_REVIEW.md](../META_APP_REVIEW.md). Accounts connected before this Unified Login change must be reconnected; their Instagram Login tokens are not interchangeable with Facebook Page access tokens.
+For clients outside app roles, request Advanced Access through App Review — see [META_APP_REVIEW.md](../META_APP_REVIEW.md). Existing connections remain stored; Unified Login connections are marked separately so their tokens use the correct Meta Graph API and are not processed as legacy Facebook or Instagram Login tokens.
 
 ### Migrating from ManyChat or another DM tool: give OpenReply control of conversations
 

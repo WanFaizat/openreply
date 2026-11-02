@@ -15,6 +15,13 @@ import {
 } from "@/lib/instagram/provider";
 import { zernioRequest } from "@/lib/zernio/client";
 import { RateLimitError, TokenExpiredError } from "@/lib/meta/client";
+import {
+  discoverInstagramAccount,
+  discoverUnifiedInstagramAccounts,
+  getLongLivedInstagramToken,
+  refreshLongLivedToken,
+  getUserInfo as getMetaUserInfo,
+} from "@/lib/meta/client";
 import { prisma } from "@/lib/db/client";
 const context = {
   provider: "ZERNIO" as const,
@@ -31,6 +38,7 @@ function respond(body: unknown, status = 200) {
 describe("Instagram provider boundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("INSTAGRAM_APP_SECRET", "test-instagram-secret");
     vi.stubGlobal("fetch", fetchMock);
   });
   it("resolves only the selected account workspace credentials", async () => {
@@ -122,11 +130,156 @@ describe("Instagram provider boundary", () => {
     respond({ data: [{ id: "media" }] });
     expect(
       await getUserMedia({
-        context: { provider: "META", accessToken: "meta" },
+        context: { provider: "META", accessToken: "meta", instagramId: "ig-42" },
         limit: 3,
       })
     ).toEqual([{ id: "media" }]);
-    expect(fetchMock.mock.calls[0][0]).toContain("graph.instagram.com");
+    expect(fetchMock.mock.calls[0][0]).toContain("graph.facebook.com/v25.0/ig-42/media");
+  });
+  it("discovers the Instagram professional account directly from the Instagram token", async () => {
+    respond({
+      id: "app-scoped-id",
+      user_id: "ig-42",
+      username: "faims_",
+    });
+    await expect(discoverInstagramAccount("user-token", 3600)).resolves.toEqual({
+      accessToken: "user-token",
+      userInfo: {
+        id: "app-scoped-id",
+        user_id: "ig-42",
+        username: "faims_",
+      },
+      tokenExpiresAt: expect.any(Date),
+    });
+    const requestUrl = new URL(fetchMock.mock.calls[0][0]);
+    expect(requestUrl.origin).toBe("https://graph.instagram.com");
+    expect(requestUrl.pathname).toBe("/v25.0/me");
+    expect(requestUrl.searchParams.get("fields")).toContain("user_id");
+    expect(requestUrl.searchParams.get("access_token")).toBe("user-token");
+    expect(requestUrl.pathname).not.toContain("/me/accounts");
+  });
+  it("discovers the Unified Login business and selected Instagram assets", async () => {
+    respond({ id: "system-user-app-id", client_business_id: "479438679264638" });
+    respond({
+      data: [
+        {
+          id: "17841402482350466",
+          username: "faims_",
+        },
+      ],
+    });
+
+    await expect(
+      discoverUnifiedInstagramAccounts("unified-login-token")
+    ).resolves.toEqual({
+      clientBusinessId: "479438679264638",
+      accounts: [
+        {
+          id: "17841402482350466",
+          user_id: "17841402482350466",
+          username: "faims_",
+        },
+      ],
+    });
+
+    const businessUrl = new URL(fetchMock.mock.calls[0][0]);
+    expect(businessUrl.origin).toBe("https://graph.facebook.com");
+    expect(businessUrl.pathname).toBe("/v25.0/me");
+    expect(businessUrl.searchParams.get("fields")).toBe("client_business_id");
+    expect(businessUrl.searchParams.get("access_token")).toBe(
+      "unified-login-token"
+    );
+
+    const assignedAccountsUrl = new URL(fetchMock.mock.calls[1][0]);
+    expect(assignedAccountsUrl.origin).toBe("https://graph.facebook.com");
+    expect(assignedAccountsUrl.pathname).toBe(
+      "/v25.0/me/assigned_instagram_accounts"
+    );
+    expect(assignedAccountsUrl.searchParams.get("fields")).toBe("id,username");
+    expect(assignedAccountsUrl.searchParams.get("access_token")).toBe(
+      "unified-login-token"
+    );
+    expect(assignedAccountsUrl.pathname).not.toContain("/me/accounts");
+  });
+  it("loads Meta profile data by Instagram account ID, not Facebook /me", async () => {
+    respond({ id: "ig-42", username: "creator", followers_count: 7 });
+    await expect(getMetaUserInfo("page-token", "ig-42")).resolves.toMatchObject({
+      id: "ig-42",
+      user_id: "ig-42",
+      username: "creator",
+    });
+    expect(fetchMock.mock.calls[0][0]).toContain("/v25.0/ig-42?");
+  });
+  it("uses Instagram Graph requests for direct Instagram Login tokens", async () => {
+    respond({ data: [{ id: "media-1" }] });
+    await expect(
+      getUserMedia({
+        context: {
+          provider: "INSTAGRAM",
+          accessToken: "instagram-user-token",
+          instagramId: "ig-42",
+        },
+        limit: 3,
+      })
+    ).resolves.toEqual([{ id: "media-1" }]);
+    const requestUrl = new URL(fetchMock.mock.calls[0][0]);
+    expect(requestUrl.origin).toBe("https://graph.instagram.com");
+    expect(requestUrl.pathname).toBe("/v25.0/ig-42/media");
+    expect(requestUrl.searchParams.get("access_token")).toBe(
+      "instagram-user-token"
+    );
+  });
+  it("uses Facebook Graph for Unified Login token requests", async () => {
+    respond({ data: [{ id: "media-1" }] });
+    await expect(
+      getUserMedia({
+        context: {
+          provider: "UNIFIED",
+          accessToken: "unified-login-token",
+          instagramId: "17841402482350466",
+        },
+        limit: 3,
+      })
+    ).resolves.toEqual([{ id: "media-1" }]);
+    const requestUrl = new URL(fetchMock.mock.calls[0][0]);
+    expect(requestUrl.origin).toBe("https://graph.facebook.com");
+    expect(requestUrl.pathname).toBe(
+      "/v25.0/17841402482350466/media"
+    );
+  });
+  it("does not use legacy token refresh endpoints for Unified Login tokens", async () => {
+    await expect(
+      refreshLongLivedToken("unified-login-token", "UNIFIED")
+    ).rejects.toThrow("Business Integration System User token API");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it("uses the Instagram-only long-lived exchange and refresh endpoints", async () => {
+    respond({ access_token: "long-token", expires_in: 5184000 });
+    await expect(getLongLivedInstagramToken("short-token")).resolves.toEqual({
+      accessToken: "long-token",
+      expiresIn: 5184000,
+    });
+    let requestUrl = new URL(fetchMock.mock.calls[0][0]);
+    expect(requestUrl.origin).toBe("https://graph.instagram.com");
+    expect(requestUrl.pathname).toBe("/access_token");
+    expect(requestUrl.searchParams.get("grant_type")).toBe("ig_exchange_token");
+    expect(requestUrl.searchParams.get("access_token")).toBe("short-token");
+    expect(requestUrl.searchParams.get("client_secret")).toBe(
+      "test-instagram-secret"
+    );
+
+    respond({ access_token: "refreshed-token", expires_in: 5184000 });
+    await expect(
+      refreshLongLivedToken("long-token", "INSTAGRAM")
+    ).resolves.toEqual({
+      accessToken: "refreshed-token",
+      expiresIn: 5184000,
+    });
+    requestUrl = new URL(fetchMock.mock.calls[1][0]);
+    expect(requestUrl.origin).toBe("https://graph.instagram.com");
+    expect(requestUrl.pathname).toBe("/refresh_access_token");
+    expect(requestUrl.searchParams.get("grant_type")).toBe("ig_refresh_token");
+    expect(requestUrl.searchParams.get("access_token")).toBe("long-token");
   });
   it.each([
     [429, RateLimitError],

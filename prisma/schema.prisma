@@ -134,6 +134,8 @@ model InstagramAccount {
   provider          InstagramProvider @default(META)
   zernioAccountId   String?
   accessToken       String
+  clientBusinessId  String?
+  metaLoginConfigId String?
   tokenExpiresAt    DateTime?
   webhookSubscribed Boolean  @default(false)
   connectedAt       DateTime @default(now())
@@ -400,6 +402,8 @@ enum OperationalEventLevel {
 
 enum InstagramProvider {
   META
+  INSTAGRAM
+  UNIFIED
   ZERNIO
 }
 
