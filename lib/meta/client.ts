@@ -720,7 +720,8 @@ async function readKnownUnifiedAccounts(
  */
 async function describeEmptyUnifiedLogin(
   accessToken: string,
-  knownInstagramIds: string[]
+  knownInstagramIds: string[],
+  clientBusinessId?: string
 ): Promise<string> {
   const parts: string[] = [];
   try {
@@ -734,6 +735,9 @@ async function describeEmptyUnifiedLogin(
       data?: {
         type?: string;
         is_valid?: boolean;
+        issued_at?: number;
+        user_id?: string;
+        profile_id?: string;
         scopes?: string[];
         granular_scopes?: Array<{ scope?: string; target_ids?: string[] }>;
       };
@@ -746,6 +750,14 @@ async function describeEmptyUnifiedLogin(
         ...new Set((data.granular_scopes ?? []).flatMap((g) => g.target_ids ?? [])),
       ];
       parts.push(`targets ${targets.slice(0, 5).join(",") || "none"}`);
+      // Which business and system user the token belongs to, and when Meta
+      // issued it, tell a self-hoster whether Meta handed back a fresh token
+      // for the business that owns the Instagram account.
+      parts.push(`business ${clientBusinessId ?? "?"}`);
+      parts.push(`system user ${data.user_id ?? data.profile_id ?? "?"}`);
+      if (data.issued_at) {
+        parts.push(`issued ${new Date(data.issued_at * 1000).toISOString()}`);
+      }
     }
   } catch {
     parts.push("token details unavailable");
@@ -811,7 +823,8 @@ export async function discoverUnifiedInstagramAccounts(
   if (accounts.length === 0) {
     const details = await describeEmptyUnifiedLogin(
       accessToken,
-      knownInstagramIds
+      knownInstagramIds,
+      business.client_business_id
     );
     throw new Error(
       `Unified Login returned no assigned Instagram accounts. Select the professional Instagram account to share in the Meta login flow and verify instagram_basic is enabled.${details ? ` (${details})` : ""}`

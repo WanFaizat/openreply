@@ -243,6 +243,8 @@ describe("Instagram provider boundary", () => {
       data: {
         type: "SYSTEM_USER",
         is_valid: true,
+        issued_at: 1793692800,
+        user_id: "122100000000000001",
         scopes: ["instagram_basic"],
         granular_scopes: [],
       },
@@ -261,6 +263,9 @@ describe("Instagram provider boundary", () => {
     expect(message).toContain("token SYSTEM_USER, valid true");
     expect(message).toContain("scopes instagram_basic");
     expect(message).toContain("targets none");
+    expect(message).toContain("business 479438679264638");
+    expect(message).toContain("system user 122100000000000001");
+    expect(message).toContain("issued 2026-11-03T");
     expect(message).toContain(
       "account 17841402482350466 not readable (code 100/33)"
     );

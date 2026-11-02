@@ -18,6 +18,9 @@ type DebugTokenData = {
   type?: string;
   is_valid?: boolean;
   expires_at?: number;
+  issued_at?: number;
+  user_id?: string;
+  profile_id?: string;
   scopes?: string[];
   granular_scopes?: Array<{ scope: string; target_ids?: string[] }>;
 };
@@ -106,6 +109,9 @@ async function main() {
         console.log(
           `  token type: ${data.type ?? "unknown"}, valid: ${data.is_valid}, expires: ${expiry}`
         );
+        console.log(
+          `  issued: ${data.issued_at ? new Date(data.issued_at * 1000).toISOString() : "unknown"}, system user: ${data.user_id ?? data.profile_id ?? "unknown"}`
+        );
         console.log(`  scopes: ${(data.scopes ?? []).join(", ") || "(none)"}`);
         for (const scope of data.granular_scopes ?? []) {
           console.log(
@@ -129,10 +135,34 @@ async function main() {
       report("token info", false, safe(error));
     }
 
+    // Which business the token belongs to. Meta ties a Unified Login token to
+    // the business that was picked in the login flow, so a token for the wrong
+    // business cannot see the account even though the app lists it as shared.
+    try {
+      const me = await graph(
+        `${fb}/me?${query({ fields: "id,name,client_business_id" })}`
+      );
+      if (typeof me.body.id === "string") {
+        report(
+          "identity (/me)",
+          true,
+          `id ${me.body.id}, name ${String(me.body.name ?? "unknown")}, business ${String(me.body.client_business_id ?? "none")}`
+        );
+      } else {
+        report("identity (/me)", false, failure(me));
+      }
+    } catch (error) {
+      report("identity (/me)", false, safe(error));
+    }
+
     const mediaFields = { fields: "id,media_product_type,timestamp", limit: "3" };
     let firstMediaId: string | undefined;
 
     const checks: Array<{ label: string; url: string }> = [
+      {
+        label: "assigned pages",
+        url: `${fb}/me/assigned_pages?${query({ fields: "id,name", limit: "100" })}`,
+      },
       {
         label: "profile (graph.facebook.com)",
         url: `${fb}/${account.instagramId}?${query({ fields: "id,username,media_count" })}`,
