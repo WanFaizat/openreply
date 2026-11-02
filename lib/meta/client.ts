@@ -686,8 +686,94 @@ export async function discoverInstagramAccount(
   };
 }
 
+/**
+ * Meta can return an empty assigned-accounts list for a Unified Login token even
+ * though the shared account is readable with it. When reconnecting, check the
+ * accounts this workspace already has before giving up.
+ */
+async function readKnownUnifiedAccounts(
+  accessToken: string,
+  knownInstagramIds: string[]
+): Promise<InstagramUser[]> {
+  const found: InstagramUser[] = [];
+  for (const id of knownInstagramIds) {
+    try {
+      const url = new URL(`${facebookGraphBase()}/${id}`);
+      url.searchParams.set("fields", "id,username");
+      url.searchParams.set("access_token", accessToken);
+      const user = await handleResponse<InstagramUser>(
+        await fetch(url.toString(), { cache: "no-store" })
+      );
+      if (user.id && user.username) {
+        found.push({ ...user, user_id: user.id });
+      }
+    } catch {
+      // This token cannot read that account. Try the next one.
+    }
+  }
+  return found;
+}
+
+/**
+ * Explain what a Unified Login token can see, for the error shown when no
+ * Instagram account was shared. Never throws and never includes the token.
+ */
+async function describeEmptyUnifiedLogin(
+  accessToken: string,
+  knownInstagramIds: string[]
+): Promise<string> {
+  const parts: string[] = [];
+  try {
+    const url = new URL(`${facebookGraphBase()}/debug_token`);
+    url.searchParams.set("input_token", accessToken);
+    url.searchParams.set(
+      "access_token",
+      `${requireEnv("INSTAGRAM_APP_ID")}|${requireEnv("FACEBOOK_APP_SECRET")}`
+    );
+    const body = (await (await fetch(url.toString(), { cache: "no-store" })).json()) as {
+      data?: {
+        type?: string;
+        is_valid?: boolean;
+        scopes?: string[];
+        granular_scopes?: Array<{ scope?: string; target_ids?: string[] }>;
+      };
+    };
+    const data = body.data;
+    if (data) {
+      parts.push(`token ${data.type ?? "?"}, valid ${data.is_valid}`);
+      parts.push(`scopes ${(data.scopes ?? []).join(",") || "none"}`);
+      const targets = [
+        ...new Set((data.granular_scopes ?? []).flatMap((g) => g.target_ids ?? [])),
+      ];
+      parts.push(`targets ${targets.slice(0, 5).join(",") || "none"}`);
+    }
+  } catch {
+    parts.push("token details unavailable");
+  }
+  for (const id of knownInstagramIds) {
+    try {
+      const url = new URL(`${facebookGraphBase()}/${id}`);
+      url.searchParams.set("fields", "id");
+      url.searchParams.set("access_token", accessToken);
+      await handleResponse<{ id: string }>(await fetch(url.toString(), { cache: "no-store" }));
+      parts.push(`account ${id} readable`);
+    } catch (error) {
+      // handleResponse writes "[code=N sub=M ...]" into the message.
+      const match =
+        error instanceof Error
+          ? /\[code=(\d+) sub=([\d-]+)/.exec(error.message)
+          : null;
+      parts.push(
+        `account ${id} not readable (${match ? `code ${match[1]}/${match[2]}` : "error"})`
+      );
+    }
+  }
+  return parts.join("; ");
+}
+
 export async function discoverUnifiedInstagramAccounts(
-  accessToken: string
+  accessToken: string,
+  knownInstagramIds: string[] = []
 ): Promise<{ clientBusinessId: string; accounts: InstagramUser[] }> {
   const graphBase = facebookGraphBase();
   const businessUrl = new URL(`${graphBase}/me`);
@@ -716,12 +802,19 @@ export async function discoverUnifiedInstagramAccounts(
   const assigned = await handleResponse<{ data?: InstagramUser[] }>(
     accountsResponse
   );
-  const accounts = (assigned.data ?? []).filter(
+  let accounts = (assigned.data ?? []).filter(
     (account) => account.id && account.username
   );
   if (accounts.length === 0) {
+    accounts = await readKnownUnifiedAccounts(accessToken, knownInstagramIds);
+  }
+  if (accounts.length === 0) {
+    const details = await describeEmptyUnifiedLogin(
+      accessToken,
+      knownInstagramIds
+    );
     throw new Error(
-      "Unified Login returned no assigned Instagram accounts. Select the professional Instagram account to share in the Meta login flow and verify instagram_basic is enabled."
+      `Unified Login returned no assigned Instagram accounts. Select the professional Instagram account to share in the Meta login flow and verify instagram_basic is enabled.${details ? ` (${details})` : ""}`
     );
   }
 

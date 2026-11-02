@@ -57,10 +57,17 @@ export async function GET(request: NextRequest) {
     accessTokenForError = accessToken;
     const tokenExpiresAt =
       expiresIn === null ? null : new Date(Date.now() + expiresIn * 1000);
+    const knownAccounts = await prisma.instagramAccount.findMany({
+      where: { workspaceId: state.workspaceId },
+      select: { instagramId: true },
+    });
     const {
       clientBusinessId,
       accounts,
-    } = await discoverUnifiedInstagramAccounts(accessToken);
+    } = await discoverUnifiedInstagramAccounts(
+      accessToken,
+      knownAccounts.map((account) => account.instagramId)
+    );
     if (accounts.length !== 1) {
       throw new Error(
         `Unified Login returned ${accounts.length} Instagram accounts. Configure the login to share exactly one account per OpenReply connection.`
