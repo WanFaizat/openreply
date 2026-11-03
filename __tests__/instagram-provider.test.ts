@@ -262,6 +262,9 @@ describe("Instagram provider boundary", () => {
     );
     expect(message).toContain("token SYSTEM_USER, valid true");
     expect(message).toContain("scopes instagram_basic");
+    expect(message).toContain(
+      "business_management is not granted: add it to the Facebook Login for Business configuration"
+    );
     expect(message).toContain("targets none");
     expect(message).toContain("business 479438679264638");
     expect(message).toContain("system user 122100000000000001");
@@ -271,6 +274,39 @@ describe("Instagram provider boundary", () => {
     );
     expect(message).not.toContain("unified-login-token");
     expect(message).not.toContain("app-secret");
+  });
+  it("does not blame business_management when the token already has it", async () => {
+    vi.stubEnv("INSTAGRAM_APP_ID", "app-id");
+    vi.stubEnv("FACEBOOK_APP_SECRET", "app-secret");
+    const notReadable = {
+      error: {
+        message: "Unsupported get request",
+        type: "GraphMethodException",
+        code: 100,
+        error_subcode: 33,
+      },
+    };
+    respond({ id: "system-user-app-id", client_business_id: "479438679264638" });
+    respond({ data: [] });
+    respond(notReadable, 400);
+    respond({
+      data: {
+        type: "SYSTEM_USER",
+        is_valid: true,
+        scopes: ["business_management", "instagram_basic"],
+        granular_scopes: [],
+      },
+    });
+    respond(notReadable, 400);
+
+    const error = await discoverUnifiedInstagramAccounts("unified-login-token", [
+      "17841402482350466",
+    ]).catch((caught: Error) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    expect(message).toContain("scopes business_management,instagram_basic");
+    expect(message).not.toContain("business_management is not granted");
   });
   it("loads Meta profile data by Instagram account ID, not Facebook /me", async () => {
     respond({ id: "ig-42", username: "creator", followers_count: 7 });

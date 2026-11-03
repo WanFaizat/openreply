@@ -746,6 +746,17 @@ async function describeEmptyUnifiedLogin(
     if (data) {
       parts.push(`token ${data.type ?? "?"}, valid ${data.is_valid}`);
       parts.push(`scopes ${(data.scopes ?? []).join(",") || "none"}`);
+      // Since late October 2026 Meta only gives a Unified Login system user
+      // access to the shared Instagram account when the Facebook Login for
+      // Business configuration also asks for business_management. Without it
+      // the token is valid but the account is invisible to it (empty assigned
+      // accounts, code 100/33), so say so instead of leaving a self-hoster to
+      // guess.
+      if (data.scopes && !data.scopes.includes("business_management")) {
+        parts.push(
+          "business_management is not granted: add it to the Facebook Login for Business configuration (Configurations > Edit), save, then reconnect"
+        );
+      }
       const targets = [
         ...new Set((data.granular_scopes ?? []).flatMap((g) => g.target_ids ?? [])),
       ];
@@ -827,7 +838,7 @@ export async function discoverUnifiedInstagramAccounts(
       business.client_business_id
     );
     throw new Error(
-      `Unified Login returned no assigned Instagram accounts. Select the professional Instagram account to share in the Meta login flow and verify instagram_basic is enabled.${details ? ` (${details})` : ""}`
+      `Unified Login returned no assigned Instagram accounts. Select the professional Instagram account to share in the Meta login flow and verify instagram_basic and business_management are enabled in the login configuration.${details ? ` (${details})` : ""}`
     );
   }
 

@@ -9,6 +9,7 @@ OpenReply uses the official Instagram API with Unified Login to connect a profes
 - `instagram_basic`
 - `instagram_manage_comments`
 - `instagram_manage_messages`
+- `business_management`
 
 ## Permission justifications
 
@@ -19,6 +20,8 @@ Paste these into the App Review request, adjusted to your wording.
 `instagram_manage_comments`. When a follower comments a keyword the account owner configured on the owner's own post or reel, we receive the comment through the comments webhook and, if the owner enabled it, post a public reply under that comment. We only act on comments on the connecting account's own media.
 
 `instagram_manage_messages`. After a follower comments a configured keyword, we send that follower a one-time private reply with content the account owner set up. We also receive inbound messages, including Story replies, and can respond when the message matches an enabled keyword automation. We send only the configured replies and respect Meta's messaging policies and rate limits.
+
+`business_management`. Unified Login gives the app a Business Integration System User access token for the business portfolio the account owner selects. Meta only lets that token reach the shared Instagram account when the login configuration also asks for this permission. We use it for that one purpose: to let the system user see the Instagram account the owner chose to share. We do not read or change anything else in the owner's business portfolio.
 
 ## Screencast script
 
