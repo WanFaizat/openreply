@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   const accountsToRefresh = await prisma.instagramAccount.findMany({
     where: {
       accessToken: { not: "" },
-      provider: "META",
+      provider: { in: ["META", "INSTAGRAM", "UNIFIED"] },
       tokenExpiresAt: {
         not: null,
         lte: cutoffDate,
@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
       workspaceId: true,
       username: true,
       accessToken: true,
+      provider: true,
     },
   });
 
@@ -55,9 +56,17 @@ export async function GET(request: NextRequest) {
 
   for (const account of accountsToRefresh) {
     try {
+      if (account.provider === "UNIFIED") {
+        throw new Error(
+          "This Unified Login token has a configured expiration. Reconnect the Instagram account through Unified Login before the expiry; it cannot be refreshed with legacy token endpoints."
+        );
+      }
       const currentToken = decryptToken(account.accessToken);
       const { accessToken: newToken, expiresIn } =
-        await refreshLongLivedToken(currentToken);
+        await refreshLongLivedToken(
+          currentToken,
+          account.provider === "INSTAGRAM" ? "INSTAGRAM" : "META"
+        );
       const encryptedToken = encryptToken(newToken);
       const newExpiry = new Date(Date.now() + expiresIn * 1000);
 

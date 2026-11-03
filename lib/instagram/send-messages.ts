@@ -86,12 +86,13 @@ export async function sendPrivateReply({
   message: string;
   postId?: string;
 }) {
-  if (context.provider === "META")
+  if (context.provider !== "ZERNIO")
     return meta.sendPrivateReply(
       context.accessToken,
       instagramAccountId,
       commentId,
-      message
+      message,
+      ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
     );
   return sendZernioMessage({ context, commentId, postId, text: message });
 }
@@ -113,14 +114,15 @@ export async function sendPrivateReplyWithButton({
   payload: string;
   postId?: string;
 }) {
-  if (context.provider === "META")
+  if (context.provider !== "ZERNIO")
     return meta.sendPrivateReplyWithButton(
       context.accessToken,
       instagramAccountId,
       commentId,
       text,
       buttonTitle,
-      payload
+      payload,
+      ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
     );
   return sendZernioMessage({
     context,
@@ -146,14 +148,15 @@ export async function sendDirectMessageWithButton({
   buttonTitle: string;
   payload: string;
 }) {
-  if (context.provider === "META")
+  if (context.provider !== "ZERNIO")
     return meta.sendDirectMessageWithButton(
       context.accessToken,
       instagramAccountId,
       userId,
       text,
       buttonTitle,
-      payload
+      payload,
+      ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
     );
   return sendZernioMessage({
     context,
@@ -178,13 +181,14 @@ export async function sendPrivateReplyWithLinkButton({
   buttons: meta.LinkButton[];
   postId?: string;
 }) {
-  if (context.provider === "META")
+  if (context.provider !== "ZERNIO")
     return meta.sendPrivateReplyWithLinkButton(
       context.accessToken,
       instagramAccountId,
       commentId,
       text,
-      buttons
+      buttons,
+      ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
     );
   return sendZernioMessage({
     context,
@@ -206,12 +210,13 @@ export async function sendDirectMessage({
   userId: string;
   message: string;
 }) {
-  if (context.provider === "META")
+  if (context.provider !== "ZERNIO")
     return meta.sendDirectMessage(
       context.accessToken,
       instagramAccountId,
       userId,
-      message
+      message,
+      ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
     );
   return sendZernioMessage({ context, recipientId: userId, text: message });
 }
@@ -229,13 +234,14 @@ export async function sendDirectMessageWithLinkButton({
   text: string;
   buttons: meta.LinkButton[];
 }) {
-  if (context.provider === "META")
+  if (context.provider !== "ZERNIO")
     return meta.sendDirectMessageWithLinkButton(
       context.accessToken,
       instagramAccountId,
       userId,
       text,
-      buttons
+      buttons,
+      ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
     );
   return sendZernioMessage({
     context,
@@ -256,8 +262,13 @@ export async function sendCommentReply({
   message: string;
   postId?: string;
 }) {
-  if (context.provider === "META")
-    return meta.sendCommentReply(context.accessToken, commentId, message);
+  if (context.provider !== "ZERNIO")
+    return meta.sendCommentReply(
+      context.accessToken,
+      commentId,
+      message,
+      ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
+    );
   const result = await zernioRequest<{ data: { commentId: string } }>({
     apiKey: context.apiKey,
     path: `/inbox/comments/${encodeURIComponent(postId ?? commentId)}`,

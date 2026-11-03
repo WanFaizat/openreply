@@ -2,7 +2,11 @@ import { decryptToken } from "@/lib/meta/oauth";
 import { prisma } from "@/lib/db/client";
 
 export type InstagramContext =
-  | { provider: "META"; accessToken: string; instagramId: string }
+  | {
+      provider: "META" | "INSTAGRAM" | "UNIFIED";
+      accessToken: string;
+      instagramId: string;
+    }
   | {
       provider: "ZERNIO";
       apiKey: string;
@@ -12,7 +16,7 @@ export type InstagramContext =
     };
 
 export type ProviderAccount = {
-  provider: "META" | "ZERNIO";
+  provider: "META" | "INSTAGRAM" | "UNIFIED" | "ZERNIO";
   workspaceId: string;
   zernioAccountId: string | null;
   instagramId: string;
@@ -33,7 +37,7 @@ export async function createInstagramContext(
 ): Promise<InstagramContext> {
   if (account.provider !== "ZERNIO")
     return {
-      provider: "META",
+      provider: account.provider,
       accessToken: decryptToken(account.accessToken),
       instagramId: account.instagramId,
     };

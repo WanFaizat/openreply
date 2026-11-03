@@ -9,8 +9,12 @@ export async function getConversations({
   context: InstagramContext;
   igUserId: string;
 }): Promise<meta.InstagramConversation[]> {
-  if (context.provider === "META")
-    return meta.getConversations(context.accessToken, igUserId);
+  if (context.provider !== "ZERNIO")
+    return meta.getConversations(
+      context.accessToken,
+      igUserId,
+      ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
+    );
   const result = await zernioRequest<{
     data: {
       id: string;
@@ -46,8 +50,12 @@ export async function getConversationMessages({
   context: InstagramContext;
   conversationId: string;
 }): Promise<meta.InstagramMessage[]> {
-  if (context.provider === "META")
-    return meta.getConversationMessages(context.accessToken, conversationId);
+  if (context.provider !== "ZERNIO")
+    return meta.getConversationMessages(
+      context.accessToken,
+      conversationId,
+      ...(context.provider === "INSTAGRAM" ? (["INSTAGRAM"] as const) : [])
+    );
   const result = await zernioRequest<{
     messages: {
       id: string;

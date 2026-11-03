@@ -17,7 +17,7 @@ Turn a chat instruction into a comment-to-DM campaign through the OpenReply agen
 ## Steps
 
 1. **Find the target.** Call `GET /api/agent/posts` when the user names a post ("post terbaru", "reel semalam"). Show the post's caption start and date, and confirm it if more than one could fit. For "reel seterusnya" use target `next_reel`. For every post use `any_post`.
-2. **Collect the details.** Keyword (default `NAK BELAJAR` if the user says nothing), the message to send, and the link. Ask only for what is missing, in one short question.
+2. **Collect the details.** Keyword (default `NAK BELAJAR` if the user says nothing), the message to send, and the link. Ask only for what is missing, in one short question. When the user wants everyone who comments or messages to get a reply ("balas semua orang"), set `matchAnyWord: true` and no keywords. When they also want direct messages and Story replies answered, set `dmTriggerEnabled: true`. A DM campaign that answers everyone replies to each person once every 24 hours.
 3. **Write the DM.** Keep it short and natural, in the user's own voice. Use "saya" for the user and "anda" for the reader. Do not use em dashes. Avoid stock phrases that sound like a bot. If the user gave the exact text, use it as it is.
 4. **Keep the wording safe for Instagram and Meta policies.** No promise of profit or returns, no investment claim, no pressure. Saying that saving can start from a small amount with no monthly commitment is fine when the user says so.
 5. **Show a preview and wait for a yes.** Show the target post, keywords, message, link and whether it will go live. A campaign sends messages to real people, so do not switch one on before the user agrees.

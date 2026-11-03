@@ -31,6 +31,7 @@ export function getEncryptionKeyHex(): string {
 // variable names back instead of an unhandled throw from requireEnv().
 const INSTAGRAM_OAUTH_ENV = [
   "INSTAGRAM_APP_ID",
+  "FACEBOOK_APP_SECRET",
   "ENCRYPTION_KEY",
   "NEXTAUTH_SECRET",
 ] as const;
@@ -43,9 +44,6 @@ export function getMissingInstagramOAuthEnv(): string[] {
     // already round-tripped through Meta — catch the bad format here instead.
     return name === "ENCRYPTION_KEY" && !HEX_32_BYTE.test(value);
   });
-  if (!process.env.FACEBOOK_APP_SECRET && !process.env.INSTAGRAM_APP_SECRET) {
-    missing.push("FACEBOOK_APP_SECRET or INSTAGRAM_APP_SECRET");
-  }
   return missing;
 }
 

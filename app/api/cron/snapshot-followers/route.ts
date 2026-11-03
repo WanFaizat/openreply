@@ -29,6 +29,8 @@ export async function GET(request: NextRequest) {
     where: {
       OR: [
         { provider: "META", accessToken: { not: "" } },
+        { provider: "INSTAGRAM", accessToken: { not: "" } },
+        { provider: "UNIFIED", accessToken: { not: "" } },
         { provider: "ZERNIO", zernioAccountId: { not: null } },
       ],
     },

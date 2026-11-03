@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   getEncryptionKeyHex,
+  getMissingInstagramOAuthEnv,
   getMetaGraphApiVersion,
   isEmailAllowedToSignIn,
   requireEnv,
@@ -11,6 +12,22 @@ beforeEach(() => {
 });
 
 describe("environment helpers", () => {
+  it("requires the Meta app secret for Unified Login OAuth", () => {
+    vi.stubEnv("INSTAGRAM_APP_ID", "1671833827801953");
+    vi.stubEnv("FACEBOOK_APP_SECRET", "test-meta-secret");
+    vi.stubEnv("ENCRYPTION_KEY", "a".repeat(64));
+    vi.stubEnv("NEXTAUTH_SECRET", "test-nextauth-secret");
+    expect(getMissingInstagramOAuthEnv()).toEqual([]);
+  });
+
+  it("does not accept an Instagram app secret for Unified Login OAuth", () => {
+    vi.stubEnv("INSTAGRAM_APP_ID", "1671833827801953");
+    vi.stubEnv("INSTAGRAM_APP_SECRET", "test-instagram-secret");
+    vi.stubEnv("ENCRYPTION_KEY", "a".repeat(64));
+    vi.stubEnv("NEXTAUTH_SECRET", "test-nextauth-secret");
+    expect(getMissingInstagramOAuthEnv()).toContain("FACEBOOK_APP_SECRET");
+  });
+
   it("requires missing variables", () => {
     expect(() => requireEnv("MISSING_TEST_ENV")).toThrow(
       "MISSING_TEST_ENV environment variable is required"

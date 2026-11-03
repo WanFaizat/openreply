@@ -87,7 +87,7 @@ export interface OverviewResponse {
     interactions: number;
   };
   posts: OverviewPost[];
-  provider?: "META" | "ZERNIO";
+  provider?: "META" | "INSTAGRAM" | "UNIFIED" | "ZERNIO";
   limitations?: string[];
 }
 

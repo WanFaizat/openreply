@@ -7,11 +7,17 @@ const OPENING_DM_READ_FALLBACK_DELAY_MS = 5 * 60 * 1000;
 type InstagramPayload = Parameters<typeof parseCommentEvents>[0];
 
 export async function processInstagramWebhook({ payload: incoming, provider, workspaceId }: {
-  payload: InstagramPayload; provider: InstagramProvider; workspaceId?: string;
+  payload: InstagramPayload; provider?: InstagramProvider; workspaceId?: string;
 }) {
   if (incoming.object !== 'instagram' || !Array.isArray(incoming.entry)) return;
   const accounts = await prisma.instagramAccount.findMany({
-    where: { instagramId: { in: incoming.entry.map(e => e.id) }, provider, ...(workspaceId ? { workspaceId } : {}) },
+    where: {
+      instagramId: { in: incoming.entry.map(e => e.id) },
+      provider:
+        provider ??
+        { in: ["META", "INSTAGRAM", "UNIFIED"] },
+      ...(workspaceId ? { workspaceId } : {}),
+    },
     select: { id: true, instagramId: true, workspaceId: true },
   });
   const accountMap = new Map(accounts.map(a => [a.instagramId, a]));
